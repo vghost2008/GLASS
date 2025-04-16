@@ -138,20 +138,34 @@ class MVTecDataset2(torch.utils.data.Dataset):
         self.anomaly_source_paths = sorted(1 * glob.glob(os.path.join(anomaly_source_path,"**","*.jpg"),recursive=True) +
                                            0 * list(next(iter(self.imgpaths_per_class.values())).values())[0])
 
-        self.transform_img = [
-            Resize(self.resize),
-            ColorJitter(brightness_factor, contrast_factor, saturation_factor),
-            RandomHorizontalFlip(h_flip_p),
-            RandomVerticalFlip(v_flip_p),
-            RandomGrayscale(gray_p),
-            #transforms.RandomAffine(rotate_degrees,
-            #                        translate=(translate, translate),
-            #                        scale=(1.0 - scale, 1.0 + scale),
-            #                        interpolation=transforms.InterpolationMode.BILINEAR),
-            #transforms.CenterCrop(self.imgsize),
-            ToTensor(),
-            Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-        ]
+        if split == DatasetSplit.TRAIN:
+            self.transform_img = [
+                Resize(self.resize),
+                ColorJitter(brightness_factor, contrast_factor, saturation_factor),
+                RandomHorizontalFlip(h_flip_p),
+                RandomVerticalFlip(v_flip_p),
+                RandomGrayscale(gray_p),
+                #transforms.RandomAffine(rotate_degrees,
+                #                        translate=(translate, translate),
+                #                        scale=(1.0 - scale, 1.0 + scale),
+                #                        interpolation=transforms.InterpolationMode.BILINEAR),
+                #transforms.CenterCrop(self.imgsize),
+                ToTensor(),
+                Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ]
+            self.transform_mask = None
+        else:
+            self.transform_img = [
+                Resize(self.resize),
+                ToTensor(),
+                Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ]
+            self.transform_mask = [
+                transforms.Resize(self.resize),
+                transforms.ToTensor(),
+            ]
+            self.transform_mask = transforms.Compose(self.transform_mask)
+
         self.transform_img = transforms.Compose(self.transform_img)
         self.transform_aug_img = [
             transforms.Resize(self.resize),
