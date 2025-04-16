@@ -2,6 +2,7 @@ import imgaug.augmenters as iaa
 import numpy as np
 import torch
 import math
+from collections.abc import Iterable
 
 
 def generate_thr(img_shape, min=0, max=4):
@@ -17,7 +18,9 @@ def generate_thr(img_shape, min=0, max=4):
 
 
 def perlin_mask(img_shape, feat_size, min, max, mask_fg, flag=0):
-    mask = np.zeros((feat_size, feat_size))
+    if not isinstance(feat_size,Iterable):
+        feat_size = (feat_size,feat_size)
+    mask = np.zeros(feat_size)
     while np.max(mask) == 0:
         perlin_thr_1 = generate_thr(img_shape, min, max)
         perlin_thr_2 = generate_thr(img_shape, min, max)
@@ -31,8 +34,8 @@ def perlin_mask(img_shape, feat_size, min, max, mask_fg, flag=0):
             perlin_thr = perlin_thr_1
         perlin_thr = torch.from_numpy(perlin_thr)
         perlin_thr_fg = perlin_thr * mask_fg
-        down_ratio_y = int(img_shape[1] / feat_size)
-        down_ratio_x = int(img_shape[2] / feat_size)
+        down_ratio_y = int(img_shape[1] / feat_size[0])
+        down_ratio_x = int(img_shape[2] / feat_size[1])
         mask_ = perlin_thr_fg
         mask = torch.nn.functional.max_pool2d(perlin_thr_fg.unsqueeze(0).unsqueeze(0), (down_ratio_y, down_ratio_x)).float()
         mask = mask.numpy()[0, 0]

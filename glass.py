@@ -3,11 +3,11 @@ from collections import OrderedDict
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
 from model import Discriminator, Projection, PatchMaker
-
+import tifffile
 import numpy as np
 import pandas as pd
 import torch.nn.functional as F
-
+import os.path as osp
 import logging
 import os
 import math
@@ -19,6 +19,9 @@ import cv2
 import utils
 import glob
 import shutil
+import wml.wml_utils as wmlu
+import wml.wtorch.summary as wsummary
+import wml.wtorch.utils as wtu
 
 LOGGER = logging.getLogger(__name__)
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -28,6 +31,9 @@ IMAGENET_STD = [0.229, 0.224, 0.225]
 class TBWrapper:
     def __init__(self, log_dir):
         self.g_iter = 0
+        log_dir = osp.abspath(osp.expanduser(log_dir))
+        print(f"TB logdir {log_dir}")
+        wmlu.create_empty_dir_remove_if(log_dir,"tb")
         self.logger = SummaryWriter(log_dir=log_dir)
 
     def step(self):
@@ -38,6 +44,8 @@ class GLASS(torch.nn.Module):
     def __init__(self, device):
         super(GLASS, self).__init__()
         self.device = device
+        self.scaler = torch.cuda.amp.GradScaler(init_scale=100.0)
+
 
     def load(
             self,
@@ -124,7 +132,7 @@ class GLASS(torch.nn.Module):
         self.dataset_name = ""
         self.logger = None
 
-    def set_model_dir(self, model_dir, dataset_name):
+    def set_model_dir(self, model_dir, dataset_name,run_save_path="./results"):
         self.model_dir = model_dir
         os.makedirs(self.model_dir, exist_ok=True)
         self.ckpt_dir = os.path.join(self.model_dir, dataset_name)
@@ -132,6 +140,7 @@ class GLASS(torch.nn.Module):
         self.tb_dir = os.path.join(self.ckpt_dir, "tb")
         os.makedirs(self.tb_dir, exist_ok=True)
         self.logger = TBWrapper(self.tb_dir)
+        self.run_save_path = run_save_path
 
     def _embed(self, images, detach=True, provide_patch_shapes=False, evaluation=False):
         """Returns feature embeddings for images."""
@@ -189,9 +198,12 @@ class GLASS(torch.nn.Module):
         state_dict = {}
         ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
         ckpt_path_save = os.path.join(self.ckpt_dir, "ckpt.pth")
+
+        '''
         if len(ckpt_path) != 0:
             LOGGER.info("Start testing, ckpt file found!")
             return 0., 0., 0., 0., 0., -1.
+        '''
 
         def update_state_dict():
             state_dict["discriminator"] = OrderedDict({
@@ -242,8 +254,8 @@ class GLASS(torch.nn.Module):
 
             avg_img = utils.torch_format_2_numpy_img(self.c.detach().cpu().numpy())
             self.svd = utils.distribution_judge(avg_img, name)
-            os.makedirs(f'./results/judge/avg/{self.svd}', exist_ok=True)
-            cv2.imwrite(f'./results/judge/avg/{self.svd}/{name}.png', avg_img)
+            os.makedirs(osp.join(self.run_save_path,f'judge/avg/{self.svd}'), exist_ok=True)
+            cv2.imwrite(osp.join(self.run_save_path,f'judge/avg/{self.svd}/{name}.png'), avg_img)
             return self.svd
 
         pbar = tqdm.tqdm(range(self.meta_epochs), unit='epoch')
@@ -270,13 +282,13 @@ class GLASS(torch.nn.Module):
                         self.c += batch_mean
                 self.c /= len(training_data)
 
-            pbar_str, pt, pf = self._train_discriminator(training_data, i_epoch, pbar, pbar_str1)
+            pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
             update_state_dict()
 
             if (i_epoch + 1) % self.eval_epochs == 0:
-                images, scores, segmentations, labels_gt, masks_gt = self.predict(val_data)
+                images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
                 image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
-                                                                                         labels_gt, masks_gt, name)
+                                                                                         labels_gt, masks_gt, name,img_paths=img_paths)
 
                 self.logger.logger.add_scalar("i-auroc", image_auroc, i_epoch)
                 self.logger.logger.add_scalar("i-ap", image_ap, i_epoch)
@@ -284,8 +296,9 @@ class GLASS(torch.nn.Module):
                 self.logger.logger.add_scalar("p-ap", pixel_ap, i_epoch)
                 self.logger.logger.add_scalar("p-pro", pixel_pro, i_epoch)
 
-                eval_path = './results/eval/' + name + '/'
-                train_path = './results/training/' + name + '/'
+
+                eval_path = osp.join(self.run_save_path,'eval' , name)
+                train_path = osp.join(self.run_save_path,'training' , name)
                 if best_record is None:
                     best_record = [image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, i_epoch]
                     ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
@@ -353,11 +366,13 @@ class GLASS(torch.nn.Module):
             r_t = torch.tensor([torch.quantile(dist_t, q=self.radius)]).to(self.device)
 
             for step in range(self.step + 1):
-                scores = self.discriminator(torch.cat([true_feats, gaus_feats]))
+                scores,logits = self.discriminator(torch.cat([true_feats, gaus_feats]))
                 true_scores = scores[:len(true_feats)]
                 gaus_scores = scores[len(true_feats):]
-                true_loss = torch.nn.BCELoss()(true_scores, torch.zeros_like(true_scores))
-                gaus_loss = torch.nn.BCELoss()(gaus_scores, torch.ones_like(gaus_scores))
+                true_logits_scores = logits[:len(true_feats)]
+                gaus_logits_scores = logits[len(true_feats):]
+                true_loss = torch.nn.BCEWithLogitsLoss()(true_logits_scores, torch.zeros_like(true_scores))
+                gaus_loss = torch.nn.BCEWithLogitsLoss()(gaus_logits_scores, torch.ones_like(gaus_scores))
                 bce_loss = true_loss + gaus_loss
 
                 if step == self.step:
@@ -405,7 +420,7 @@ class GLASS(torch.nn.Module):
                 fake_points = proj_feats + h
                 fake_feats[mask_s_gt[:, 0] == 1] = fake_points
 
-            fake_scores = self.discriminator(fake_feats)
+            fake_scores,_ = self.discriminator(fake_feats)
             if self.p > 0:
                 fake_dist = (fake_scores - mask_s_gt) ** 2
                 d_hard = torch.quantile(fake_dist, q=self.p)
@@ -470,6 +485,181 @@ class GLASS(torch.nn.Module):
 
         return pbar_str2, all_p_true_, all_p_fake_
 
+    def _train_discriminator_amp(self, input_data, cur_epoch, pbar, pbar_str1):
+        self.forward_modules.eval()
+        if self.pre_proj > 0:
+            self.pre_projection.train()
+        self.discriminator.train()
+
+        all_loss, all_p_true, all_p_fake, all_r_t, all_r_g, all_r_f = [], [], [], [], [], []
+        sample_num = 0
+        for i_iter, data_item in enumerate(input_data):
+            self.dsc_opt.zero_grad()
+            if self.pre_proj > 0:
+                self.proj_opt.zero_grad()
+
+            aug = data_item["aug"]
+            aug = aug.to(torch.float).to(self.device)
+            img = data_item["image"]
+            img = img.to(torch.float).to(self.device)
+            with torch.cuda.amp.autocast():
+                if self.pre_proj > 0:
+                    fake_feats = self.pre_projection(self._embed(aug, evaluation=False)[0])
+                    fake_feats = fake_feats[0] if len(fake_feats) == 2 else fake_feats
+                    true_feats = self.pre_projection(self._embed(img, evaluation=False)[0])
+                    true_feats = true_feats[0] if len(true_feats) == 2 else true_feats
+                else:
+                    fake_feats = self._embed(aug, evaluation=False)[0]
+                    fake_feats.requires_grad = True
+                    true_feats = self._embed(img, evaluation=False)[0]
+                    true_feats.requires_grad = True
+
+                mask_s_gt = data_item["mask_s"].reshape(-1, 1).to(self.device)
+                noise = torch.normal(0, self.noise, true_feats.shape).to(self.device)
+                gaus_feats = true_feats + noise
+    
+                center = self.c.repeat(img.shape[0], 1, 1)
+                center = center.reshape(-1, center.shape[-1])
+                true_points = torch.concat([fake_feats[mask_s_gt[:, 0] == 0], true_feats], dim=0)
+                c_t_points = torch.concat([center[mask_s_gt[:, 0] == 0], center], dim=0)
+                dist_t = torch.norm(true_points - c_t_points, dim=1)
+                r_t = torch.tensor([torch.quantile(dist_t, q=self.radius)]).to(self.device)
+    
+                for step in range(self.step + 1):
+                    scores,logits = self.discriminator(torch.cat([true_feats, gaus_feats]))
+                    true_scores = scores[:len(true_feats)]
+                    gaus_scores = scores[len(true_feats):]
+                    true_logits_scores = logits[:len(true_feats)]
+                    gaus_logits_scores = logits[len(true_feats):]
+                    with torch.cuda.amp.autocast(enabled=False):
+                        true_loss = torch.nn.BCEWithLogitsLoss()(true_logits_scores.float(), torch.zeros_like(true_scores.float()))
+                        gaus_loss = torch.nn.BCEWithLogitsLoss()(gaus_logits_scores.float(), torch.ones_like(gaus_scores.float()))
+                    bce_loss = true_loss + gaus_loss
+    
+                    if step == self.step:
+                        break
+                    elif self.mining == 0:
+                        dist_g = torch.norm(gaus_feats - center, dim=1)
+                        r_g = torch.tensor([torch.quantile(dist_g, q=self.radius)]).to(self.device)
+                        break
+    
+                    grad = torch.autograd.grad(gaus_loss, [gaus_feats])[0]
+                    grad_norm = torch.norm(grad, dim=1)
+                    grad_norm = grad_norm.view(-1, 1)
+                    grad_normalized = grad / (grad_norm + 1e-10)
+    
+                    with torch.no_grad():
+                        gaus_feats.add_(0.001 * grad_normalized)
+    
+                    if (step + 1) % 5 == 0:
+                        dist_g = torch.norm(gaus_feats - center, dim=1)
+                        r_g = torch.tensor([torch.quantile(dist_g, q=self.radius)]).to(self.device)
+                        proj_feats = center if self.svd == 1 else true_feats
+                        r = r_t if self.svd == 1 else 0.5
+    
+                        h = gaus_feats - proj_feats
+                        h_norm = dist_g if self.svd == 1 else torch.norm(h, dim=1)
+                        alpha = torch.clamp(h_norm, r, 2 * r)
+                        proj = (alpha / (h_norm + 1e-10)).view(-1, 1)
+                        h = proj * h
+                        gaus_feats = proj_feats + h
+    
+                fake_points = fake_feats[mask_s_gt[:, 0] == 1]
+                true_points = true_feats[mask_s_gt[:, 0] == 1]
+                c_f_points = center[mask_s_gt[:, 0] == 1]
+                dist_f = torch.norm(fake_points - c_f_points, dim=1)
+                r_f = torch.tensor([torch.quantile(dist_f, q=self.radius)]).to(self.device)
+                proj_feats = c_f_points if self.svd == 1 else true_points
+                r = r_t if self.svd == 1 else 1
+    
+                if self.svd == 1:
+                    h = fake_points - proj_feats
+                    h_norm = dist_f if self.svd == 1 else torch.norm(h, dim=1)
+                    alpha = torch.clamp(h_norm, 2 * r, 4 * r)
+                    proj = (alpha / (h_norm + 1e-10)).view(-1, 1)
+                    h = proj * h
+                    fake_points = proj_feats + h
+                    fake_feats[mask_s_gt[:, 0] == 1] = fake_points.to(fake_feats.dtype)
+    
+                fake_scores,_ = self.discriminator(fake_feats)
+                if self.p > 0:
+                    fake_dist = (fake_scores - mask_s_gt) ** 2
+                    d_hard = torch.quantile(fake_dist, q=self.p)
+                    fake_scores_ = fake_scores[fake_dist >= d_hard].unsqueeze(1)
+                    mask_ = mask_s_gt[fake_dist >= d_hard].unsqueeze(1)
+                else:
+                    fake_scores_ = fake_scores
+                    mask_ = mask_s_gt
+                output = torch.cat([1 - fake_scores_, fake_scores_], dim=1)
+                with torch.cuda.amp.autocast(enabled=False):
+                    focal_loss = self.focal_loss(output.float(), mask_.float())
+
+                loss = bce_loss + focal_loss
+
+            self.scaler.scale(loss).backward()
+            if self.pre_proj > 0:
+                self.scaler.step(self.proj_opt)
+            if self.train_backbone:
+                self.scaler.step(self.backbone_opt)
+            self.scaler.step(self.dsc_opt)
+            self.scaler.update()
+
+            pix_true = torch.concat([fake_scores.detach() * (1 - mask_s_gt), true_scores.detach()])
+            pix_fake = torch.concat([fake_scores.detach() * mask_s_gt, gaus_scores.detach()])
+            p_true = ((pix_true < self.dsc_margin).sum() - (pix_true == 0).sum()) / ((mask_s_gt == 0).sum() + true_scores.shape[0])
+            p_fake = (pix_fake >= self.dsc_margin).sum() / ((mask_s_gt == 1).sum() + gaus_scores.shape[0])
+
+            if self.logger.g_iter%10 == 0:
+                self.logger.logger.add_scalar(f"p_true", p_true, self.logger.g_iter)
+                self.logger.logger.add_scalar(f"p_fake", p_fake, self.logger.g_iter)
+                self.logger.logger.add_scalar(f"r_t", r_t, self.logger.g_iter)
+                self.logger.logger.add_scalar(f"r_g", r_g, self.logger.g_iter)
+                self.logger.logger.add_scalar(f"r_f", r_f, self.logger.g_iter)
+                self.logger.logger.add_scalar("loss", loss, self.logger.g_iter)
+
+            if self.logger.g_iter%200 == 0:
+                log_img = wtu.unnormalize(data_item["image"][:3],mean=input_data.dataset.mean*255,std=input_data.dataset.std*255)
+                self.logger.logger.add_images("input",log_img.to(torch.uint8),self.logger.g_iter)
+                log_img = wtu.unnormalize(data_item["aug"][:3],mean=input_data.dataset.mean*255,std=input_data.dataset.std*255)
+                self.logger.logger.add_images("aug",log_img.to(torch.uint8),self.logger.g_iter)
+                log_img = torch.unsqueeze(data_item["mask_s"][:3],1)*200
+                self.logger.logger.add_images("mask_s",log_img.to(torch.uint8),self.logger.g_iter)
+            self.logger.step()
+
+            all_loss.append(loss.detach().cpu().item())
+            all_p_true.append(p_true.cpu().item())
+            all_p_fake.append(p_fake.cpu().item())
+            all_r_t.append(r_t.cpu().item())
+            all_r_g.append(r_g.cpu().item())
+            all_r_f.append(r_f.cpu().item())
+
+            all_loss_ = np.mean(all_loss)
+            all_p_true_ = np.mean(all_p_true)
+            all_p_fake_ = np.mean(all_p_fake)
+            all_r_t_ = np.mean(all_r_t)
+            all_r_g_ = np.mean(all_r_g)
+            all_r_f_ = np.mean(all_r_f)
+            sample_num = sample_num + img.shape[0]
+
+            pbar_str = f"epoch:{cur_epoch} loss:{all_loss_:.2e}"
+            pbar_str += f" pt:{all_p_true_ * 100:.2f}"
+            pbar_str += f" pf:{all_p_fake_ * 100:.2f}"
+            pbar_str += f" rt:{all_r_t_:.2f}"
+            pbar_str += f" rg:{all_r_g_:.2f}"
+            pbar_str += f" rf:{all_r_f_:.2f}"
+            pbar_str += f" svd:{self.svd}"
+            pbar_str += f" sample:{sample_num}"
+            pbar_str2 = pbar_str
+            pbar_str += pbar_str1
+            pbar.set_description_str(pbar_str)
+
+            if sample_num > self.limit:
+                break
+
+        return pbar_str2, all_p_true_, all_p_fake_
+
+
+
     def tester(self, test_data, name):
         ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
         if len(ckpt_path) != 0:
@@ -481,9 +671,9 @@ class GLASS(torch.nn.Module):
             else:
                 self.load_state_dict(state_dict, strict=False)
 
-            images, scores, segmentations, labels_gt, masks_gt = self.predict(test_data)
+            images, scores, segmentations, labels_gt, masks_gt,img_paths = self.predict(test_data)
             image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
-                                                                                     labels_gt, masks_gt, name, path='eval')
+                                                                                     labels_gt, masks_gt, name, path='eval',img_paths=img_paths)
             epoch = int(ckpt_path[0].split('_')[-1].split('.')[0])
         else:
             image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch = 0., 0., 0., 0., 0., -1.
@@ -491,7 +681,7 @@ class GLASS(torch.nn.Module):
 
         return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch
 
-    def _evaluate(self, images, scores, segmentations, labels_gt, masks_gt, name, path='training'):
+    def _evaluate(self, images, scores, segmentations, labels_gt, masks_gt, name, path='training',img_paths=None):
         scores = np.squeeze(np.array(scores))
         image_scores = metrics.compute_imagewise_retrieval_metrics(scores, labels_gt, path)
         image_auroc = image_scores["auroc"]
@@ -527,10 +717,18 @@ class GLASS(torch.nn.Module):
             mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
 
             img_up = np.hstack([defect, target, mask])
-            img_up = cv2.resize(img_up, (256 * 3, 256))
-            full_path = './results/' + path + '/' + name + '/'
+            #img_up = cv2.resize(img_up, (256 * 3, 256))
+            full_path = osp.join(self.run_save_path, path , name)
+            if img_paths is not None and len(img_paths) == len(defects):
+                save_name = osp.basename(img_paths[i])
+                full_path = osp.join(full_path,wmlu.base_name(osp.dirname(img_paths[i])))
+            else:
+                save_name = str(i + 1).zfill(3) + '.png'
             utils.del_remake_dir(full_path, del_flag=False)
-            cv2.imwrite(full_path + str(i + 1).zfill(3) + '.png', img_up)
+
+            cv2.imwrite(osp.join(full_path , save_name), img_up)
+
+        print(f"Eval save path: {full_path}")
 
         return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro
 
@@ -548,18 +746,18 @@ class GLASS(torch.nn.Module):
         with tqdm.tqdm(test_dataloader, desc="Inferring...", leave=False, unit='batch') as data_iterator:
             for data in data_iterator:
                 if isinstance(data, dict):
-                    labels_gt.extend(data["is_anomaly"].numpy().tolist())
+                    labels_gt.extend(data["is_anomaly"].numpy())
                     if data.get("mask_gt", None) is not None:
-                        masks_gt.extend(data["mask_gt"].numpy().tolist())
+                        masks_gt.extend(data["mask_gt"].numpy())
                     image = data["image"]
-                    images.extend(image.numpy().tolist())
+                    images.extend(image.numpy())
                     img_paths.extend(data["image_path"])
                 _scores, _masks = self._predict(image)
                 for score, mask in zip(_scores, _masks):
                     scores.append(score)
                     masks.append(mask)
 
-        return images, scores, masks, labels_gt, masks_gt
+        return images, scores, masks, labels_gt, masks_gt,img_paths
 
     def _predict(self, img):
         """Infer score and mask for a batch of images."""
@@ -577,11 +775,11 @@ class GLASS(torch.nn.Module):
                 patch_features = self.pre_projection(patch_features)
                 patch_features = patch_features[0] if len(patch_features) == 2 else patch_features
 
-            patch_scores = image_scores = self.discriminator(patch_features)
+            patch_scores = image_scores = self.discriminator(patch_features)[0]
             patch_scores = self.patch_maker.unpatch_scores(patch_scores, batchsize=img.shape[0])
             scales = patch_shapes[0]
             patch_scores = patch_scores.reshape(img.shape[0], scales[0], scales[1])
-            masks = self.anomaly_segmentor.convert_to_segmentation(patch_scores)
+            masks = self.anomaly_segmentor.convert_to_segmentation(patch_scores,target_size=img.shape[-2:])
 
             image_scores = self.patch_maker.unpatch_scores(image_scores, batchsize=img.shape[0])
             image_scores = self.patch_maker.score(image_scores)
@@ -589,3 +787,40 @@ class GLASS(torch.nn.Module):
                 image_scores = image_scores.cpu().numpy()
 
         return list(image_scores), list(masks)
+
+    def run_predict(self, test_data, name):
+        ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
+        if len(ckpt_path) != 0:
+            state_dict = torch.load(ckpt_path[0], map_location=self.device)
+            if 'discriminator' in state_dict:
+                self.discriminator.load_state_dict(state_dict['discriminator'])
+                if "pre_projection" in state_dict:
+                    self.pre_projection.load_state_dict(state_dict["pre_projection"])
+            else:
+                self.load_state_dict(state_dict, strict=False)
+
+            images, scores, segmentations, labels_gt, masks_gt,img_paths = self.predict(test_data)
+            self._save_predict_results(images, scores, segmentations, name, path='eval')
+
+
+    def _save_predict_results(self, images, scores, segmentations, name, path='training'):
+        scores = np.squeeze(np.array(scores))
+
+        defects = np.array(images)
+        for i in range(len(defects)):
+            defect = utils.torch_format_2_numpy_img(defects[i])
+            mask = cv2.cvtColor(cv2.resize(segmentations[i], (defect.shape[1], defect.shape[0])),
+                                cv2.COLOR_GRAY2BGR)
+            raw_mask = np.array(mask).astype(np.float16)
+            mask = (mask * 255).astype('uint8')
+            mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
+
+            img_up = np.hstack([defect, mask])
+            full_path = osp.join(self.run_save_path, path , name)
+            utils.del_remake_dir(full_path, del_flag=False)
+            cv2.imwrite(osp.join(full_path , str(i + 1).zfill(3) + '.png'), img_up)
+
+            full_path_tiff = osp.join(self.run_save_path+'_tiff', path ,name)
+            utils.del_remake_dir(full_path_tiff, del_flag=False)
+            tifffile.imwrite(osp.join(full_path_tiff , str(i + 1).zfill(3) + '.tiff'), img_up)
+

@@ -26,14 +26,17 @@ class Discriminator(torch.nn.Module):
                                      torch.nn.BatchNorm1d(_hidden),
                                      torch.nn.LeakyReLU(0.2)
                                  ))
-        self.tail = torch.nn.Sequential(torch.nn.Linear(_hidden, 1, bias=False),
-                                        torch.nn.Sigmoid())
+        #self.tail = torch.nn.Sequential(torch.nn.Linear(_hidden, 1, bias=False),
+        #                                torch.nn.Sigmoid())
+        self.tail = torch.nn.Linear(_hidden, 1, bias=False)
+        self.sigmoid = torch.nn.Sigmoid()
         self.apply(init_weight)
 
     def forward(self, x):
         x = self.body(x)
         x = self.tail(x)
-        return x
+        score = self.sigmoid(x)
+        return score,x
 
 
 class Projection(torch.nn.Module):
