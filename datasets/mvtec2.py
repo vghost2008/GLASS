@@ -232,6 +232,9 @@ class MVTecDataset2(torch.utils.data.Dataset):
         mask_l = np.zeros(img_shape[1:],dtype=np.uint8)
         mask_l[y:y+valid_mask.shape[0],x:x+valid_mask.shape[1]] = valid_mask
 
+        if mask_fg is not None and len(mask_fg) > 10:
+            mask_l = (mask_l*mask_fg).astype(np.uint8)
+
         mask_s = wmli.resize_img(mask_l,size=(feat_size[1],feat_size[0]),keep_aspect_ratio=False,interpolation=cv2.INTER_NEAREST)
         mask_l = (mask_l>0).astype(np.float32)
         mask_s = (mask_s>0).astype(np.float32)
@@ -299,13 +302,15 @@ class MVTecDataset2(torch.utils.data.Dataset):
 
             s = image.shape[-2:]
             if np.random.rand()<0.9:
-                mask_all = perlin_mask(image.shape, [s[0]//self.downsampling,s[1]//self.downsampling], 0, 6, mask_fg, 1)
+                pl_max = np.random.randint(3,6+1)
+                mask_all = perlin_mask(image.shape, [s[0]//self.downsampling,s[1]//self.downsampling], 0, pl_max, mask_fg, 1)
             else:
                 try:
                     mask_all = self.get_mask_by_files(image.shape,[s[0]//self.downsampling,s[1]//self.downsampling],mask_fg=mask_fg)
-                except:
-                    print(f"Get mask by file faild.")
-                    mask_all = perlin_mask(image.shape, [s[0]//self.downsampling,s[1]//self.downsampling], 0, 6, mask_fg, 1)
+                except Exception as e:
+                    print(f"Get mask by file faild: {e}.")
+                    pl_max = np.random.randint(3,6+1)
+                    mask_all = perlin_mask(image.shape, [s[0]//self.downsampling,s[1]//self.downsampling], 0, pl_max, mask_fg, 1)
             mask_s = torch.from_numpy(mask_all[0])
             mask_l = torch.from_numpy(mask_all[1])
 
