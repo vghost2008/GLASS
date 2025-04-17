@@ -21,7 +21,8 @@ def perlin_mask(img_shape, feat_size, min, max, mask_fg, flag=0):
     if not isinstance(feat_size,Iterable):
         feat_size = (feat_size,feat_size)
     mask = np.zeros(feat_size)
-    while np.max(mask) == 0:
+    max_try_nr = 20
+    while np.max(mask) == 0 and max_try_nr>0:
         perlin_thr_1 = generate_thr(img_shape, min, max)
         perlin_thr_2 = generate_thr(img_shape, min, max)
         temp = torch.rand(1).numpy()[0]
@@ -39,6 +40,9 @@ def perlin_mask(img_shape, feat_size, min, max, mask_fg, flag=0):
         mask_ = perlin_thr_fg
         mask = torch.nn.functional.max_pool2d(perlin_thr_fg.unsqueeze(0).unsqueeze(0), (down_ratio_y, down_ratio_x)).float()
         mask = mask.numpy()[0, 0]
+        max_try_nr -= 1
+    if np.max(mask) == 0 and max_try_nr<=0:
+        print(f"Get perline mask timeout.")
     mask_s = mask
     if flag != 0:
         mask_l = mask_.numpy()
