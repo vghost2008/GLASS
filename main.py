@@ -35,7 +35,7 @@ def main(**kwargs):
 @click.option("--target_embed_dimension", type=int, default=1024)
 @click.option("--patchsize", type=int, default=3)
 @click.option("--meta_epochs", type=int, default=640)
-@click.option("--eval_epochs", type=int, default=16)
+@click.option("--eval_epochs", type=int, default=20)
 @click.option("--dsc_layers", type=int, default=2)
 @click.option("--dsc_hidden", type=int, default=1024)
 @click.option("--pre_proj", type=int, default=1)
