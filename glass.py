@@ -234,9 +234,10 @@ class GLASS(torch.nn.Module):
                 self.distribution = 0
                 df = pd.read_excel(xlsx_path)
                 self.svd = df.loc[df['Class'] == name, 'Distribution'].values[0]
-        except:
-            self.distribution = 1
-            self.svd = 1
+        except Exception as e:
+            print(f"ERROR: distribution faild, {e}")
+            self.distribution = 0
+            self.svd = 0
 
         # judge by image-level spectrogram analysis
         if self.distribution == 1:

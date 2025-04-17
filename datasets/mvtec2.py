@@ -179,6 +179,9 @@ class MVTecDataset2(torch.utils.data.Dataset):
         self.transform_aug_img = transforms.Compose(self.transform_aug_img)
 
         self.gt_mask_files = self.get_gt_mask_files()
+        print(f"img_transform: {self.transform_img}")
+        print(f"aug_img_transform: {self.transform_aug_img}")
+        print(f"mask_transform : {self.transform_mask}")
 
     def get_gt_mask_files(self):
         path = osp.join(self.source,self.classname)
