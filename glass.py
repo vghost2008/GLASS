@@ -616,6 +616,9 @@ class GLASS(torch.nn.Module):
                 self.logger.logger.add_scalar(f"r_g", r_g, self.logger.g_iter)
                 self.logger.logger.add_scalar(f"r_f", r_f, self.logger.g_iter)
                 self.logger.logger.add_scalar("loss", loss, self.logger.g_iter)
+                self.logger.logger.add_scalar("focal_loss", focal_loss, self.logger.g_iter)
+                self.logger.logger.add_scalar("gaus_loss", gaus_loss, self.logger.g_iter)
+                self.logger.logger.add_scalar("true_loss", true_loss, self.logger.g_iter)
 
             if self.logger.g_iter%200 == 0:
                 log_img = wtu.unnormalize(data_item["image"][:3],mean=input_data.dataset.mean*255,std=input_data.dataset.std*255)
