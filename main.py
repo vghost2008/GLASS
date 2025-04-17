@@ -10,6 +10,8 @@ import warnings
 import backbones
 import glass
 import utils
+import numpy as np
+import time
 
 
 @click.group(chain=True)
@@ -33,7 +35,7 @@ def main(**kwargs):
 @click.option("--target_embed_dimension", type=int, default=1024)
 @click.option("--patchsize", type=int, default=3)
 @click.option("--meta_epochs", type=int, default=640)
-@click.option("--eval_epochs", type=int, default=1)
+@click.option("--eval_epochs", type=int, default=16)
 @click.option("--dsc_layers", type=int, default=2)
 @click.option("--dsc_hidden", type=int, default=1024)
 @click.option("--pre_proj", type=int, default=1)
@@ -262,6 +264,7 @@ def run(
         run_name,
         test,
 ):
+    np.random.seed(int(time.time()))
     methods = {key: item for (key, item) in methods}
 
     run_save_path = utils.create_storage_folder(
@@ -276,7 +279,7 @@ def run(
     data = {'Class': [], 'Distribution': [], 'Foreground': []}
     df = pd.DataFrame(data)
     for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
-        utils.fix_seeds(seed, device)
+        #utils.fix_seeds(seed, device)
         dataset_name = dataloaders["training"].name
         imagesize = dataloaders["training"].dataset.imagesize
         glass_list = methods["get_glass"](imagesize, device)
@@ -295,7 +298,8 @@ def run(
         for i, GLASS in enumerate(glass_list):
             flag = 0., 0., 0., 0., 0., -1.
             if GLASS.backbone.seed is not None:
-                utils.fix_seeds(GLASS.backbone.seed, device)
+                #utils.fix_seeds(GLASS.backbone.seed, device)
+                pass
 
             GLASS.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name,run_save_path=run_save_path)
             if test == 'ckpt':

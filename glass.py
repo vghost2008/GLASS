@@ -107,6 +107,12 @@ class GLASS(torch.nn.Module):
             self.proj_opt = torch.optim.Adam(self.pre_projection.parameters(), lr, weight_decay=1e-5)
 
         self.eval_epochs = eval_epochs
+        self.eval_offset = 0
+        if self.eval_epochs<=2:
+            print(f"WARNING: eval epochs={self.eval_epochs}")
+        else:
+            self.eval_offset = np.random.randint(1,self.eval_epochs)
+            print(f"INFO: eval epochs={self.eval_epochs}, eval offset={self.eval_offset}")
         self.dsc_layers = dsc_layers
         self.dsc_hidden = dsc_hidden
         self.discriminator = Discriminator(self.target_embed_dimension, n_layers=dsc_layers, hidden=dsc_hidden)
@@ -286,7 +292,7 @@ class GLASS(torch.nn.Module):
             pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
             update_state_dict()
 
-            if (i_epoch + 1) % self.eval_epochs == 0:
+            if (i_epoch + self.eval_offset) % self.eval_epochs == 0:
                 images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
                 image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
                                                                                          labels_gt, masks_gt, name,img_paths=img_paths)
