@@ -22,6 +22,7 @@ import shutil
 import wml.wml_utils as wmlu
 import wml.wtorch.summary as wsummary
 import wml.wtorch.utils as wtu
+import wml.img_utils as wmli
 
 LOGGER = logging.getLogger(__name__)
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -138,15 +139,20 @@ class GLASS(torch.nn.Module):
         self.dataset_name = ""
         self.logger = None
 
-    def set_model_dir(self, model_dir, dataset_name,run_save_path="./results"):
+    def set_model_dir(self, model_dir, dataset_name,run_save_path="./results",tb_dir="tb"):
         self.model_dir = model_dir
         os.makedirs(self.model_dir, exist_ok=True)
         self.ckpt_dir = os.path.join(self.model_dir, dataset_name)
         os.makedirs(self.ckpt_dir, exist_ok=True)
-        self.tb_dir = os.path.join(self.ckpt_dir, "tb")
+        self.tb_dir = os.path.join(self.ckpt_dir, tb_dir)
         os.makedirs(self.tb_dir, exist_ok=True)
         self.logger = TBWrapper(self.tb_dir)
-        self.run_save_path = run_save_path
+        self.run_save_path = osp.abspath(run_save_path)
+
+        print(f"Model dir: {model_dir}")
+        print(f"ckpt dir: {self.ckpt_dir}")
+        print(f"tb dir {self.tb_dir}")
+        print(f"Run save path {self.run_save_path}")
 
     def _embed(self, images, detach=True, provide_patch_shapes=False, evaluation=False):
         """Returns feature embeddings for images."""
@@ -171,34 +177,34 @@ class GLASS(torch.nn.Module):
         ref_num_patches = patch_shapes[0]
 
         for i in range(1, len(patch_features)):
-            _features = patch_features[i]
-            patch_dims = patch_shapes[i]
+            _features = patch_features[i] #[B,H*W,C,P,P]
+            patch_dims = patch_shapes[i] #(H,W)
 
             _features = _features.reshape(
                 _features.shape[0], patch_dims[0], patch_dims[1], *_features.shape[2:]
-            )
-            _features = _features.permute(0, 3, 4, 5, 1, 2)
+            ) #[B,H,W,C,P,P]
+            _features = _features.permute(0, 3, 4, 5, 1, 2) #[B,C,P,P,H,W]
             perm_base_shape = _features.shape
-            _features = _features.reshape(-1, *_features.shape[-2:])
+            _features = _features.reshape(-1, *_features.shape[-2:]) #[B*C*P*P,H,W]
             _features = F.interpolate(
                 _features.unsqueeze(1),
                 size=(ref_num_patches[0], ref_num_patches[1]),
                 mode="bilinear",
                 align_corners=False,
-            )
+            ) #[B*C*P*P,1,RH,RW]
             _features = _features.squeeze(1)
             _features = _features.reshape(
                 *perm_base_shape[:-2], ref_num_patches[0], ref_num_patches[1]
-            )
-            _features = _features.permute(0, 4, 5, 1, 2, 3)
-            _features = _features.reshape(len(_features), -1, *_features.shape[-3:])
+            )#[B,C,P,P,RH,RW]
+            _features = _features.permute(0, 4, 5, 1, 2, 3) #[B,RH,RW,C,P,P]
+            _features = _features.reshape(len(_features), -1, *_features.shape[-3:]) #[B,RH*RW,C,P,P]
             patch_features[i] = _features
 
-        patch_features = [x.reshape(-1, *x.shape[-3:]) for x in patch_features]
-        patch_features = self.forward_modules["preprocessing"](patch_features)
-        patch_features = self.forward_modules["preadapt_aggregator"](patch_features)
+        patch_features = [x.reshape(-1, *x.shape[-3:]) for x in patch_features] #[B*RH*RW,C,P,P]
+        patch_features = self.forward_modules["preprocessing"](patch_features) #[B*RH*RW,num_layers,AVG_DIM] (AVG on C*P*P)
+        patch_features = self.forward_modules["preadapt_aggregator"](patch_features) #[B*RH*RW,AVG_DIM1] (AVG on num_layers*AVG_DIM)
 
-        return patch_features, patch_shapes
+        return patch_features, patch_shapes #patch_shapes ((H0,W0),(H1,W1),...)
 
     def trainer(self, training_data, val_data, name):
         state_dict = {}
@@ -274,7 +280,7 @@ class GLASS(torch.nn.Module):
                 for i, data in enumerate(training_data):
                     img = data["image"]
                     img = img.to(torch.float).to(self.device)
-                    if self.pre_proj > 0:
+                    if self.pre_proj > 0: #True
                         outputs = self.pre_projection(self._embed(img, evaluation=False)[0])
                         outputs = outputs[0] if len(outputs) == 2 else outputs
                     else:
@@ -320,6 +326,11 @@ class GLASS(torch.nn.Module):
                     torch.save(state_dict, ckpt_path_best)
                     shutil.rmtree(eval_path, ignore_errors=True)
                     shutil.copytree(train_path, eval_path)
+                    try:
+                        sym_path = wmlu.change_name(ckpt_path_best,basename="ckpt_best")
+                        wmlu.symlink(ckpt_path_best,sym_path)
+                    except:
+                        pass
 
                 pbar_str1 = f" IAUC:{round(image_auroc * 100, 2)}({round(best_record[0] * 100, 2)})" \
                             f" IAP:{round(image_ap * 100, 2)}({round(best_record[1] * 100, 2)})" \
@@ -569,7 +580,7 @@ class GLASS(torch.nn.Module):
                         alpha = torch.clamp(h_norm, r, 2 * r)
                         proj = (alpha / (h_norm + 1e-10)).view(-1, 1)
                         h = proj * h
-                        gaus_feats = proj_feats + h
+                        gaus_feats = proj_feats + h # gaus_feats将处理离proj_feats, [r,2r]的范围内
     
                 fake_points = fake_feats[mask_s_gt[:, 0] == 1]
                 true_points = true_feats[mask_s_gt[:, 0] == 1]
@@ -592,7 +603,7 @@ class GLASS(torch.nn.Module):
                 if self.p > 0:
                     fake_dist = (fake_scores - mask_s_gt) ** 2
                     d_hard = torch.quantile(fake_dist, q=self.p)
-                    fake_scores_ = fake_scores[fake_dist >= d_hard].unsqueeze(1)
+                    fake_scores_ = fake_scores[fake_dist >= d_hard].unsqueeze(1)  #使用最难预测的1-self.p的数据点
                     mask_ = mask_s_gt[fake_dist >= d_hard].unsqueeze(1)
                 else:
                     fake_scores_ = fake_scores
@@ -628,9 +639,9 @@ class GLASS(torch.nn.Module):
                 self.logger.logger.add_scalar("true_loss", true_loss, self.logger.g_iter)
 
             if self.logger.g_iter%200 == 0:
-                log_img = wtu.unnormalize(data_item["image"][:3],mean=input_data.dataset.mean*255,std=input_data.dataset.std*255)
+                log_img = wtu.unnormalize(data_item["image"][:3],mean=common.IMAGENET_MEAN*255,std=common.IMAGENET_STD*255)
                 self.logger.logger.add_images("input",log_img.to(torch.uint8),self.logger.g_iter)
-                log_img = wtu.unnormalize(data_item["aug"][:3],mean=input_data.dataset.mean*255,std=input_data.dataset.std*255)
+                log_img = wtu.unnormalize(data_item["aug"][:3],mean=common.IMAGENET_MEAN*255,std=common.IMAGENET_STD*255)
                 self.logger.logger.add_images("aug",log_img.to(torch.uint8),self.logger.g_iter)
                 log_img = torch.unsqueeze(data_item["mask_s"][:3],1)*200
                 self.logger.logger.add_images("mask_s",log_img.to(torch.uint8),self.logger.g_iter)
@@ -674,6 +685,7 @@ class GLASS(torch.nn.Module):
         ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
         if len(ckpt_path) != 0:
             state_dict = torch.load(ckpt_path[0], map_location=self.device)
+            print(f"Load {ckpt_path[0]}")
             if 'discriminator' in state_dict:
                 self.discriminator.load_state_dict(state_dict['discriminator'])
                 if "pre_projection" in state_dict:
@@ -801,6 +813,10 @@ class GLASS(torch.nn.Module):
     def run_predict(self, test_data, name):
         ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
         if len(ckpt_path) != 0:
+            if len(ckpt_path)>0:
+                for cp in ckpt_path:
+                    wmlu.ls(cp)
+            print(f"Load {ckpt_path[0]}")
             state_dict = torch.load(ckpt_path[0], map_location=self.device)
             if 'discriminator' in state_dict:
                 self.discriminator.load_state_dict(state_dict['discriminator'])
@@ -810,10 +826,10 @@ class GLASS(torch.nn.Module):
                 self.load_state_dict(state_dict, strict=False)
 
             images, scores, segmentations, labels_gt, masks_gt,img_paths = self.predict(test_data)
-            self._save_predict_results(images, scores, segmentations, name, path='eval')
+            self._save_predict_results(images, scores, segmentations, img_paths,source=test_data.dataset.source,name=name)
 
 
-    def _save_predict_results(self, images, scores, segmentations, name, path='training'):
+    def _save_predict_results(self, images, scores, segmentations, img_paths,source,name):
         scores = np.squeeze(np.array(scores))
 
         defects = np.array(images)
@@ -821,16 +837,22 @@ class GLASS(torch.nn.Module):
             defect = utils.torch_format_2_numpy_img(defects[i])
             mask = cv2.cvtColor(cv2.resize(segmentations[i], (defect.shape[1], defect.shape[0])),
                                 cv2.COLOR_GRAY2BGR)
-            raw_mask = np.array(mask).astype(np.float16)
+            raw_mask = np.array(segmentations[i]).astype(np.float32)
             mask = (mask * 255).astype('uint8')
             mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
 
             img_up = np.hstack([defect, mask])
-            full_path = osp.join(self.run_save_path, path , name)
+            full_path = osp.join(self.run_save_path, "predict", name)
             utils.del_remake_dir(full_path, del_flag=False)
             cv2.imwrite(osp.join(full_path , str(i + 1).zfill(3) + '.png'), img_up)
 
-            full_path_tiff = osp.join(self.run_save_path+'_tiff', path ,name)
-            utils.del_remake_dir(full_path_tiff, del_flag=False)
-            tifffile.imwrite(osp.join(full_path_tiff , str(i + 1).zfill(3) + '.tiff'), img_up)
+            ipath = img_paths[i]
+            rpath = wmlu.get_relative_path(ipath,source)
+            full_path_tiff = osp.join(self.run_save_path+'_tiff', "predict","anomaly_images",rpath)
+            full_path_tiff = wmlu.change_suffix(full_path_tiff,"tiff")
+            wmlu.make_dir_for_file(full_path_tiff)
+            i_shape = wmli.get_img_size(ipath)
+            raw_mask = cv2.resize(raw_mask,(i_shape[1],i_shape[0]),interpolation=cv2.INTER_LINEAR).astype(np.float16)
+            tifffile.imwrite(full_path_tiff,raw_mask)
 
+        print(f"Predict run save path {self.run_save_path}/{self.run_save_path+'_tiff'}")

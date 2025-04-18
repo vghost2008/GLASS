@@ -4,6 +4,9 @@ import scipy.ndimage as ndimage
 import torch
 import torch.nn.functional as F
 
+IMAGENET_MEAN = np.array([0.485, 0.456, 0.406])
+IMAGENET_STD = np.array([0.229, 0.224, 0.225])
+
 
 class Preprocessing(torch.nn.Module):
     def __init__(self, input_dims, output_dim):
@@ -29,7 +32,7 @@ class MeanMapper(torch.nn.Module):
         self.preprocessing_dim = preprocessing_dim
 
     def forward(self, features):
-        features = features.reshape(len(features), 1, -1)
+        features = features.reshape(len(features), 1, -1) ##[B*RH*RW,1,C*P*P]
         return F.adaptive_avg_pool1d(features, self.preprocessing_dim).squeeze(1)
 
 
