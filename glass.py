@@ -22,6 +22,7 @@ import shutil
 import wml.wml_utils as wmlu
 import wml.wtorch.summary as wsummary
 import wml.wtorch.utils as wtu
+import wml.wtorch.train_toolkit as wtt
 import wml.img_utils as wmli
 
 LOGGER = logging.getLogger(__name__)
@@ -271,6 +272,8 @@ class GLASS(torch.nn.Module):
             cv2.imwrite(osp.join(self.run_save_path,f'judge/avg/{self.svd}/{name}.png'), avg_img)
             return self.svd
 
+        print(f"Model info:")
+        wtt.show_model_parameters_info(self)
         pbar = tqdm.tqdm(range(self.meta_epochs), unit='epoch')
         pbar_str1 = ""
         best_record = None
@@ -561,7 +564,7 @@ class GLASS(torch.nn.Module):
                         r_g = torch.tensor([torch.quantile(dist_g, q=self.radius)]).to(self.device)
                         break
     
-                    grad = torch.autograd.grad(gaus_loss, [gaus_feats])[0]
+                    grad = torch.autograd.grad(gaus_loss, [gaus_feats])[0].float()
                     grad_norm = torch.norm(grad, dim=1)
                     grad_norm = grad_norm.view(-1, 1)
                     grad_normalized = grad / (grad_norm + 1e-10)
@@ -854,8 +857,10 @@ class GLASS(torch.nn.Module):
             full_path_tiff = osp.join(self.run_save_path+'_tiff', "predict","anomaly_images",rpath)
             full_path_tiff = wmlu.change_suffix(full_path_tiff,"tiff")
             wmlu.make_dir_for_file(full_path_tiff)
-            i_shape = wmli.get_img_size(ipath)
-            raw_mask = cv2.resize(raw_mask,(i_shape[1],i_shape[0]),interpolation=cv2.INTER_LINEAR).astype(np.float16)
+            #i_shape = wmli.get_img_size(ipath)
+            i_shape = raw_mask.shape
+            raw_mask = cv2.resize(raw_mask,(i_shape[1]//2,i_shape[0]//2),interpolation=cv2.INTER_LINEAR).astype(np.float16)
+            #raw_mask = raw_mask.astype(np.float16)
             tifffile.imwrite(full_path_tiff,raw_mask)
 
         print(f"Predict run save path {self.run_save_path}/{self.run_save_path+'_tiff'}")
