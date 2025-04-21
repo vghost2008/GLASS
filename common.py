@@ -3,6 +3,10 @@ import numpy as np
 import scipy.ndimage as ndimage
 import torch
 import torch.nn.functional as F
+from wml.wtorch import ConvModule
+import wml.wtorch.train_toolkit as wtt
+import torch.nn as nn
+from wml.wtorch.nn import MParent,WeakRefmodel
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406])
 IMAGENET_STD = np.array([0.229, 0.224, 0.225])
@@ -153,3 +157,57 @@ class ForwardHook:
 
 class LastLayerToExtractReachedException(Exception):
     pass
+
+class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
+    """Efficient extraction of network features."""
+
+    def __init__(self, backbone, layers_to_extract_from, device, train_backbone=False,in_channels=[256,512,1024,2048]):
+        super().__init__(backbone=backbone,layers_to_extract_from=layers_to_extract_from,device=device,train_backbone=False)
+        wtt.freeze_model(backbone)
+        channels = 256
+        self.lateral_convs = nn.ModuleList()
+        self.out_convs = nn.ModuleList()
+        for i,ic in enumerate(in_channels):
+            self.lateral_convs.append(nn.Conv2d(ic,channels,1))
+            if i<len(in_channels)-1:
+                self.out_convs.append(ConvModule(channels,channels,3,1,1))
+            else:
+                self.out_convs.append(ConvModule(channels*2,channels*2,3,1,1))
+        
+
+    def forward(self, images, eval=True):
+        outputs = super().forward(images)
+        features = [outputs[n] for n in self.layers_to_extract_from]
+        new_features = []
+        shapes = []
+        for f,m in zip(features,self.lateral_convs):
+            shapes.append(f.shape[-2:])
+            new_features.append(m(f))
+        last_feature = None
+        for i,(f,m) in enumerate(zip(new_features[::-1],self.out_convs)):
+            if i ==0:
+                last_feature = m(f)
+            elif i<len(new_features)-1:
+                last_feature = F.interpolate(last_feature,scale_factor=2,mode='nearest')
+                last_feature = m(last_feature+f)
+            else:
+                last_feature = F.interpolate(last_feature,scale_factor=2,mode='nearest')
+                last_feature = m(torch.cat([f,last_feature],dim=1))
+        
+        feature = last_feature
+
+        feature = torch.permute(feature,[0,2,3,1])
+        C = feature.shape[-1]
+        feature = torch.reshape(feature,[-1,C])
+        return feature,shapes
+
+
+    def train(self,mode=True):
+        [m.train(mode=mode) for m in self.lateral_convs]
+        [m.train(mode=mode) for m in self.out_convs]
+        if mode==False:
+            self.backbone.eval()
+
+
+
+

@@ -24,6 +24,7 @@ import wml.wtorch.summary as wsummary
 import wml.wtorch.utils as wtu
 import wml.wtorch.train_toolkit as wtt
 import wml.img_utils as wmli
+from wml.semantic.mask_utils import npresize_mask
 
 LOGGER = logging.getLogger(__name__)
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -77,30 +78,25 @@ class GLASS(torch.nn.Module):
             **kwargs,
     ):
 
+        train_backbone = True
         self.backbone = backbone.to(device)
         self.layers_to_extract_from = layers_to_extract_from
         self.input_shape = input_shape
         self.device = device
 
-        self.forward_modules = torch.nn.ModuleDict({})
-        feature_aggregator = common.NetworkFeatureAggregator(
+        feature_aggregator = common.NetworkFeatureAggregatorV2(
             self.backbone, self.layers_to_extract_from, self.device, train_backbone
-        )
-        feature_dimensions = feature_aggregator.feature_dimensions(input_shape)
-        self.forward_modules["feature_aggregator"] = feature_aggregator
+        ).to(device)
+        self.forward_modules = feature_aggregator
 
-        preprocessing = common.Preprocessing(feature_dimensions, pretrain_embed_dimension)
-        self.forward_modules["preprocessing"] = preprocessing
         self.target_embed_dimension = target_embed_dimension
-        preadapt_aggregator = common.Aggregator(target_dim=target_embed_dimension)
-        preadapt_aggregator.to(self.device)
-        self.forward_modules["preadapt_aggregator"] = preadapt_aggregator
 
         self.meta_epochs = meta_epochs
         self.lr = lr
         self.train_backbone = train_backbone
         if self.train_backbone:
-            self.backbone_opt = torch.optim.AdamW(self.forward_modules["feature_aggregator"].backbone.parameters(), lr)
+            #self.backbone_opt = torch.optim.AdamW(self.forward_modules["feature_aggregator"].backbone.parameters(), lr)
+            self.backbone_opt = self.get_embed_optim()
 
         self.pre_proj = pre_proj
         if self.pre_proj > 0:
@@ -140,6 +136,19 @@ class GLASS(torch.nn.Module):
         self.dataset_name = ""
         self.logger = None
 
+    def get_embed_optim(self):
+        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.forward_modules,return_unused=True)
+        optimizer = torch.optim.AdamW(
+                weights,
+                lr=self.lr,
+            )
+        if len(bn_weights)>0:
+            optimizer.add_param_group({"params": bn_weights,"weight_decay":0.0})
+        if len(biases)>0:
+            optimizer.add_param_group({"params": biases,"weight_decay":0.0})
+        #optimizer,unbn_weights,unweights,unbiases
+        return optimizer
+
     def set_model_dir(self, model_dir, dataset_name,run_save_path="./results",tb_dir="tb"):
         self.model_dir = model_dir
         os.makedirs(self.model_dir, exist_ok=True)
@@ -158,54 +167,15 @@ class GLASS(torch.nn.Module):
     def _embed(self, images, detach=True, provide_patch_shapes=False, evaluation=False):
         """Returns feature embeddings for images."""
         if not evaluation and self.train_backbone:
-            self.forward_modules["feature_aggregator"].train()
-            features = self.forward_modules["feature_aggregator"](images, eval=evaluation)
+            self.forward_modules.train()
+            features,shapes = self.forward_modules(images, eval=evaluation)
         else:
-            self.forward_modules["feature_aggregator"].eval()
+            self.forward_modules.eval()
             with torch.no_grad():
-                features = self.forward_modules["feature_aggregator"](images)
+                features,shapes = self.forward_modules(images)
 
-        features = [features[layer] for layer in self.layers_to_extract_from]
 
-        for i, feat in enumerate(features):
-            if len(feat.shape) == 3:
-                B, L, C = feat.shape
-                features[i] = feat.reshape(B, int(math.sqrt(L)), int(math.sqrt(L)), C).permute(0, 3, 1, 2)
-
-        features = [self.patch_maker.patchify(x, return_spatial_info=True) for x in features]
-        patch_shapes = [x[1] for x in features]
-        patch_features = [x[0] for x in features]
-        ref_num_patches = patch_shapes[0]
-
-        for i in range(1, len(patch_features)):
-            _features = patch_features[i] #[B,H*W,C,P,P]
-            patch_dims = patch_shapes[i] #(H,W)
-
-            _features = _features.reshape(
-                _features.shape[0], patch_dims[0], patch_dims[1], *_features.shape[2:]
-            ) #[B,H,W,C,P,P]
-            _features = _features.permute(0, 3, 4, 5, 1, 2) #[B,C,P,P,H,W]
-            perm_base_shape = _features.shape
-            _features = _features.reshape(-1, *_features.shape[-2:]) #[B*C*P*P,H,W]
-            _features = F.interpolate(
-                _features.unsqueeze(1),
-                size=(ref_num_patches[0], ref_num_patches[1]),
-                mode="bilinear",
-                align_corners=False,
-            ) #[B*C*P*P,1,RH,RW]
-            _features = _features.squeeze(1)
-            _features = _features.reshape(
-                *perm_base_shape[:-2], ref_num_patches[0], ref_num_patches[1]
-            )#[B,C,P,P,RH,RW]
-            _features = _features.permute(0, 4, 5, 1, 2, 3) #[B,RH,RW,C,P,P]
-            _features = _features.reshape(len(_features), -1, *_features.shape[-3:]) #[B,RH*RW,C,P,P]
-            patch_features[i] = _features
-
-        patch_features = [x.reshape(-1, *x.shape[-3:]) for x in patch_features] #[B*RH*RW,C,P,P]
-        patch_features = self.forward_modules["preprocessing"](patch_features) #[B*RH*RW,num_layers,AVG_DIM] (AVG on C*P*P)
-        patch_features = self.forward_modules["preadapt_aggregator"](patch_features) #[B*RH*RW,AVG_DIM1] (AVG on num_layers*AVG_DIM)
-
-        return patch_features, patch_shapes #patch_shapes ((H0,W0),(H1,W1),...)
+        return features, shapes #patch_shapes ((H0,W0),(H1,W1),...)
 
     def trainer(self, training_data, val_data, name):
         state_dict = {}
@@ -222,6 +192,9 @@ class GLASS(torch.nn.Module):
             state_dict["discriminator"] = OrderedDict({
                 k: v.detach().cpu()
                 for k, v in self.discriminator.state_dict().items()})
+            state_dict["forward_modules"] = OrderedDict({
+                k: v.detach().cpu()
+                for k, v in self.forward_modules.state_dict().items()})
             if self.pre_proj > 0:
                 state_dict["pre_projection"] = OrderedDict({
                     k: v.detach().cpu()
@@ -348,7 +321,10 @@ class GLASS(torch.nn.Module):
         return best_record
 
     def _train_discriminator(self, input_data, cur_epoch, pbar, pbar_str1):
-        self.forward_modules.eval()
+        if not self.train_backbone:
+            self.forward_modules.eval()
+        else:
+            self.forward_modules.train()
         if self.pre_proj > 0:
             self.pre_projection.train()
         self.discriminator.train()
@@ -507,7 +483,7 @@ class GLASS(torch.nn.Module):
         return pbar_str2, all_p_true_, all_p_fake_
 
     def _train_discriminator_amp(self, input_data, cur_epoch, pbar, pbar_str1):
-        self.forward_modules.eval()
+        #self.forward_modules.eval()
         if self.pre_proj > 0:
             self.pre_projection.train()
         self.discriminator.train()
@@ -537,7 +513,7 @@ class GLASS(torch.nn.Module):
 
                 mask_s_gt = data_item["mask_s"].reshape(-1, 1).to(self.device)
                 noise = torch.normal(0, self.noise, true_feats.shape).to(self.device)
-                gaus_feats = true_feats + noise
+                gaus_feats = true_feats + noise.to(true_feats.dtype)
     
                 center = self.c.repeat(img.shape[0], 1, 1)
                 center = center.reshape(-1, center.shape[-1])
@@ -648,6 +624,7 @@ class GLASS(torch.nn.Module):
                 self.logger.logger.add_images("aug",log_img.to(torch.uint8),self.logger.g_iter)
                 log_img = torch.unsqueeze(data_item["mask_s"][:3],1)*200
                 self.logger.logger.add_images("mask_s",log_img.to(torch.uint8),self.logger.g_iter)
+                wsummary.log_all_variable(self.logger.logger,self,global_step=self.logger.g_iter)
             self.logger.step()
 
             all_loss.append(loss.detach().cpu().item())
@@ -685,6 +662,19 @@ class GLASS(torch.nn.Module):
 
 
     def tester(self, test_data, name):
+        ckpt_path = self.load_ckpt()
+        if ckpt_path is not None: 
+            images, scores, segmentations, labels_gt, masks_gt,img_paths = self.predict(test_data)
+            image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
+                                                                                     labels_gt, masks_gt, name, path='eval',img_paths=img_paths)
+            epoch = int(ckpt_path.split('_')[-1].split('.')[0])
+        else:
+            image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch = 0., 0., 0., 0., 0., -1.
+            LOGGER.info("No ckpt file found!")
+
+        return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch
+    
+    def load_ckpt(self):
         ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
         if len(ckpt_path) != 0:
             if len(ckpt_path)>0:
@@ -699,15 +689,13 @@ class GLASS(torch.nn.Module):
             else:
                 self.load_state_dict(state_dict, strict=False)
 
-            images, scores, segmentations, labels_gt, masks_gt,img_paths = self.predict(test_data)
-            image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
-                                                                                     labels_gt, masks_gt, name, path='eval',img_paths=img_paths)
-            epoch = int(ckpt_path[0].split('_')[-1].split('.')[0])
+            if 'forward_modules' in state_dict:
+                self.forward_modules.load_state_dict(state_dict['forward_modules'])
+            
+            return ckpt_path[0]
         else:
-            image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch = 0., 0., 0., 0., 0., -1.
-            LOGGER.info("No ckpt file found!")
+            return None
 
-        return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch
 
     def _evaluate(self, images, scores, segmentations, labels_gt, masks_gt, name, path='training',img_paths=None):
         scores = np.squeeze(np.array(scores))
@@ -716,13 +704,17 @@ class GLASS(torch.nn.Module):
         image_ap = image_scores["ap"]
 
         if len(masks_gt) > 0:
-            segmentations = np.array(segmentations)
-            pixel_scores = metrics.compute_pixelwise_retrieval_metrics(segmentations, masks_gt, path)
+            #eval_segmentations = npresize_mask(segmentations,scale_factor=0.5)
+            #eval_masks_gt = [np.squeeze(v,axis=0) for v in masks_gt]
+            #eval_masks_gt = npresize_mask(eval_masks_gt,scale_factor=0.5)
+            eval_masks_gt = masks_gt
+            eval_segmentations = np.array(segmentations)
+            pixel_scores = metrics.compute_pixelwise_retrieval_metrics(eval_segmentations, eval_masks_gt, path)
             pixel_auroc = pixel_scores["auroc"]
             pixel_ap = pixel_scores["ap"]
             if path == 'eval':
                 try:
-                    pixel_pro = metrics.compute_pro(np.squeeze(np.array(masks_gt)), segmentations)
+                    pixel_pro = metrics.compute_pro(np.squeeze(np.array(eval_masks_gt)), eval_segmentations)
                 except:
                     pixel_pro = 0.
             else:
@@ -817,20 +809,7 @@ class GLASS(torch.nn.Module):
         return list(image_scores), list(masks)
 
     def run_predict(self, test_data, name):
-        ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
-        if len(ckpt_path) != 0:
-            if len(ckpt_path)>0:
-                for cp in ckpt_path:
-                    wmlu.ls(cp)
-            print(f"Load {ckpt_path[0]}")
-            state_dict = torch.load(ckpt_path[0], map_location=self.device)
-            if 'discriminator' in state_dict:
-                self.discriminator.load_state_dict(state_dict['discriminator'])
-                if "pre_projection" in state_dict:
-                    self.pre_projection.load_state_dict(state_dict["pre_projection"])
-            else:
-                self.load_state_dict(state_dict, strict=False)
-
+        if self.load_ckpt() is not None:
             images, scores, segmentations, labels_gt, masks_gt,img_paths = self.predict(test_data)
             self._save_predict_results(images, scores, segmentations, img_paths,source=test_data.dataset.source,name=name)
 
