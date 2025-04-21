@@ -704,11 +704,11 @@ class GLASS(torch.nn.Module):
         image_ap = image_scores["ap"]
 
         if len(masks_gt) > 0:
-            #eval_segmentations = npresize_mask(segmentations,scale_factor=0.5)
-            #eval_masks_gt = [np.squeeze(v,axis=0) for v in masks_gt]
-            #eval_masks_gt = npresize_mask(eval_masks_gt,scale_factor=0.5)
-            eval_masks_gt = masks_gt
-            eval_segmentations = np.array(segmentations)
+            eval_segmentations = npresize_mask(segmentations,scale_factor=0.5)
+            eval_masks_gt = [np.squeeze(v,axis=0) for v in masks_gt]
+            eval_masks_gt = npresize_mask(eval_masks_gt,scale_factor=0.5)
+            #eval_masks_gt = masks_gt
+            #eval_segmentations = np.array(segmentations)
             pixel_scores = metrics.compute_pixelwise_retrieval_metrics(eval_segmentations, eval_masks_gt, path)
             pixel_auroc = pixel_scores["auroc"]
             pixel_ap = pixel_scores["ap"]
