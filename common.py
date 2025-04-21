@@ -163,6 +163,7 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
 
     def __init__(self, backbone, layers_to_extract_from, device, train_backbone=False,in_channels=[256,512,1024,2048]):
         super().__init__(backbone=backbone,layers_to_extract_from=layers_to_extract_from,device=device,train_backbone=False)
+        print(f"layers_to_extract_from: {self.layers_to_extract_from}")
         wtt.freeze_model(backbone)
         channels = 256
         self.lateral_convs = nn.ModuleList()
