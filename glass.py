@@ -684,6 +684,9 @@ class GLASS(torch.nn.Module):
     def tester(self, test_data, name):
         ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
         if len(ckpt_path) != 0:
+            if len(ckpt_path)>0:
+                for cp in ckpt_path:
+                    wmlu.ls(cp)
             state_dict = torch.load(ckpt_path[0], map_location=self.device)
             print(f"Load {ckpt_path[0]}")
             if 'discriminator' in state_dict:
