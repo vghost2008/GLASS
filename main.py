@@ -26,6 +26,7 @@ def run(
         log_project,
         run_name,
         test,
+        ckpt_path,
 ):
     np.random.seed(int(time.time()))
     methods = {key: item for (key, item) in methods}

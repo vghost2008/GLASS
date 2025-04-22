@@ -24,6 +24,7 @@ def run(
         log_project,
         run_name,
         test,
+        ckpt_path,
 ):
     methods = {key: item for (key, item) in methods}
 
