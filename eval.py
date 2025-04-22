@@ -71,7 +71,9 @@ def run(
 
             GLASS.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name,run_save_path=run_save_path,tb_dir="tb_eval")
             i_auroc, i_ap, p_auroc, p_ap, p_pro, epoch = GLASS.tester(dataloaders["testing"], dataset_name,ckpt_path=ckpt_path)
-            print(f"dataset_name: {dataset_name}, M:{(i_auroc+p_auroc)/2:.3f}, image_auroc: {i_auroc}, image_ap: {i_ap}, pixel_auroc: {p_auroc}, pixel_ap: {p_ap}, pixel_pro: {p_pro}, best_epoch: {epoch}\n" )
+            best_threshold, best_precision, best_recall, best_f1 = GLASS.prf
+
+            print(f"dataset_name: {dataset_name}, M:{(i_auroc+p_auroc)/2:.3f}, image_auroc: {i_auroc}, pixel_auroc: {p_auroc}, Precision: {best_precision}, Recall: {best_recall}, F1: {best_f1}, best_epoch: {epoch}\n" )
             sys.stdout.flush()
             result_collect.append(
                     {

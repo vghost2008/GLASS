@@ -1,11 +1,13 @@
 import numpy as np
-
+import json
 import csv
 import os
 import cv2
 import random
 import torch
 import shutil
+import os.path as osp
+import wml.wml_utils as wmlu
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -158,3 +160,38 @@ def torch_format_2_numpy_img(img):
         img = np.repeat(img, 3, axis=-1)
         img = (img * 255).astype('uint8')
     return img
+
+def update_threshold_file(dir_name,classname,threshold):
+    file = osp.join(dir_name,"threshold.json")
+    if osp.exists(file):
+        with open(file,"r") as f:
+            data = json.load(f)
+    else:
+        data = {}
+
+    data[classname] = threshold
+
+    print(f"Thresholds")
+    wmlu.show_dict(data)
+
+    with open(file,"w") as f:
+        json.dump(data,f)
+
+def read_threshold_file(dir_name,classname):
+    file = osp.join(dir_name,"threshold.json")
+    if osp.exists(file):
+        with open(file,"r") as f:
+            data = json.load(f)
+    else:
+        data = {}
+
+    print(f"Thresholds")
+    wmlu.show_dict(data)
+    if classname not in data:
+        print(f"Find class name {classname}'s threshold faild, used default value 0.5")
+        return 0.5
+    else:
+        threshold = data[classname]
+        print(f"Use threshold {threshold}")
+    
+    return threshold

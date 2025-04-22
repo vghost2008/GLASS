@@ -24,7 +24,7 @@ import wml.wtorch.summary as wsummary
 import wml.wtorch.utils as wtu
 import wml.wtorch.train_toolkit as wtt
 import wml.img_utils as wmli
-from wml.semantic.mask_utils import npresize_mask
+from wml.semantic.mask_utils import npresize_mask,resize_mask
 
 LOGGER = logging.getLogger(__name__)
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -48,6 +48,7 @@ class GLASS(torch.nn.Module):
         super(GLASS, self).__init__()
         self.device = device
         self.scaler = torch.cuda.amp.GradScaler(init_scale=100.0)
+        self.prf = None
 
 
     def load(
@@ -282,40 +283,42 @@ class GLASS(torch.nn.Module):
                 image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
                                                                                          labels_gt, masks_gt, name,img_paths=img_paths)
 
+                best_threshold, best_precision, best_recall, best_f1 = self.prf
                 self.logger.logger.add_scalar("i-auroc", image_auroc, i_epoch)
-                self.logger.logger.add_scalar("i-ap", image_ap, i_epoch)
+                self.logger.logger.add_scalar("Recall", best_recall, i_epoch)
                 self.logger.logger.add_scalar("p-auroc", pixel_auroc, i_epoch)
-                self.logger.logger.add_scalar("p-ap", pixel_ap, i_epoch)
-                self.logger.logger.add_scalar("p-pro", pixel_pro, i_epoch)
+                self.logger.logger.add_scalar("Precision", best_precision, i_epoch)
+                self.logger.logger.add_scalar("F1", best_f1, i_epoch)
 
 
                 eval_path = osp.join(self.run_save_path,'eval' , name)
                 train_path = osp.join(self.run_save_path,'training' , name)
                 if best_record is None:
-                    best_record = [image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, i_epoch]
+                    best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
                     ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
                     torch.save(state_dict, ckpt_path_best)
                     shutil.rmtree(eval_path, ignore_errors=True)
                     shutil.copytree(train_path, eval_path)
 
                 elif image_auroc + pixel_auroc > best_record[0] + best_record[2]:
-                    best_record = [image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, i_epoch]
+                    best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
                     os.remove(ckpt_path_best)
                     ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
                     torch.save(state_dict, ckpt_path_best)
                     shutil.rmtree(eval_path, ignore_errors=True)
                     shutil.copytree(train_path, eval_path)
                     try:
-                        sym_path = osp.abspath(wmlu.change_name(ckpt_path_best,basename="ckpt_best"))
+                        ckpt_path_best = osp.abspath(ckpt_path_best)
+                        sym_path = wmlu.change_name(ckpt_path_best,basename="ckpt_best")
                         wmlu.symlink(ckpt_path_best,sym_path)
                     except:
                         pass
 
                 pbar_str1 = f" IAUC:{round(image_auroc * 100, 2)}({round(best_record[0] * 100, 2)})" \
-                            f" IAP:{round(image_ap * 100, 2)}({round(best_record[1] * 100, 2)})" \
                             f" PAUC:{round(pixel_auroc * 100, 2)}({round(best_record[2] * 100, 2)})" \
-                            f" PAP:{round(pixel_ap * 100, 2)}({round(best_record[3] * 100, 2)})" \
-                            f" PRO:{round(pixel_pro * 100, 2)}({round(best_record[4] * 100, 2)})" \
+                            f" Precision:{round(best_precision* 100, 2)}({round(best_record[1] * 100, 2)})" \
+                            f" Recall:{round(best_recall* 100, 2)}({round(best_record[2] * 100, 2)})" \
+                            f" PRO:{round(best_f1* 100, 2)}({round(best_record[4] * 100, 2)})" \
                             f" E:{i_epoch}({best_record[-1]})"
                 pbar_str += pbar_str1
                 pbar.set_description_str(pbar_str)
@@ -675,6 +678,12 @@ class GLASS(torch.nn.Module):
             image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch = 0., 0., 0., 0., 0., -1.
             LOGGER.info("No ckpt file found!")
 
+        best_threshold, best_precision, best_recall, best_f1 = self.prf
+        print("PRF:",self.prf)
+
+        utils.update_threshold_file(self.run_save_path,test_data.dataset.classname,best_threshold)
+
+
         return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch
     
     def load_ckpt(self,ckpt_path=None):
@@ -710,11 +719,13 @@ class GLASS(torch.nn.Module):
         image_ap = image_scores["ap"]
 
         if len(masks_gt) > 0:
-            eval_segmentations = npresize_mask(segmentations,scale_factor=0.5)
+            eval_segmentations = npresize_mask(segmentations,scale_factor=0.25)
             eval_masks_gt = [np.squeeze(v,axis=0) for v in masks_gt]
-            eval_masks_gt = npresize_mask(eval_masks_gt,scale_factor=0.5)
+            eval_masks_gt = npresize_mask(eval_masks_gt,scale_factor=0.25)
             #eval_masks_gt = masks_gt
             #eval_segmentations = np.array(segmentations)
+            best_threshold, best_precision, best_recall, best_f1 = metrics.compute_best_pr_re(eval_masks_gt,eval_segmentations)
+            self.prf = best_threshold, best_precision, best_recall, best_f1
             pixel_scores = metrics.compute_pixelwise_retrieval_metrics(eval_segmentations, eval_masks_gt, path)
             pixel_auroc = pixel_scores["auroc"]
             pixel_ap = pixel_scores["ap"]
@@ -817,10 +828,12 @@ class GLASS(torch.nn.Module):
     def run_predict(self, test_data, name):
         if self.load_ckpt() is not None:
             images, scores, segmentations, labels_gt, masks_gt,img_paths = self.predict(test_data)
-            self._save_predict_results(images, scores, segmentations, img_paths,source=test_data.dataset.source,name=name)
+            threshold = utils.read_threshold_file(self.run_save_path,test_data.dataset.classname)
+            print(f"Use threshold {threshold} for {test_data.dataset.classname}")
+            self._save_predict_results(images, scores, segmentations, img_paths,source=test_data.dataset.source,name=name,threshold=threshold)
 
 
-    def _save_predict_results(self, images, scores, segmentations, img_paths,source,name):
+    def _save_predict_results(self, images, scores, segmentations, img_paths,source,name,threshold=0.4):
         scores = np.squeeze(np.array(scores))
 
         defects = np.array(images)
@@ -844,8 +857,15 @@ class GLASS(torch.nn.Module):
             wmlu.make_dir_for_file(full_path_tiff)
             #i_shape = wmli.get_img_size(ipath)
             i_shape = raw_mask.shape
-            raw_mask = cv2.resize(raw_mask,(i_shape[1]//2,i_shape[0]//2),interpolation=cv2.INTER_LINEAR).astype(np.float16)
+            raw_mask = cv2.resize(raw_mask,(i_shape[1]//2,i_shape[0]//2),interpolation=cv2.INTER_LINEAR)
+            raw_mask_fp16 = raw_mask.astype(np.float16)
             #raw_mask = raw_mask.astype(np.float16)
-            tifffile.imwrite(full_path_tiff,raw_mask)
+            tifffile.imwrite(full_path_tiff,raw_mask_fp16)
+
+            full_path_png = osp.join(self.run_save_path+'_tiff', "predict","anomaly_images_thresholded",rpath)
+            full_path_png = wmlu.change_suffix(full_path_tiff,"png")
+
+            raw_mask_thr = ((raw_mask>threshold)*255).astype(np.uint8)
+            cv2.imwrite(full_path_png,raw_mask_thr)
 
         print(f"Predict run save path {self.run_save_path}/{self.run_save_path+'_tiff'}")
