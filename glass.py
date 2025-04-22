@@ -274,6 +274,9 @@ class GLASS(torch.nn.Module):
             pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
             update_state_dict()
 
+            ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_{}.pth".format(i_epoch))
+            torch.save(state_dict, ckpt_path_best)
+
             if (i_epoch + self.eval_offset) % self.eval_epochs == 0:
                 images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
                 image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
@@ -303,7 +306,7 @@ class GLASS(torch.nn.Module):
                     shutil.rmtree(eval_path, ignore_errors=True)
                     shutil.copytree(train_path, eval_path)
                     try:
-                        sym_path = wmlu.change_name(ckpt_path_best,basename="ckpt_best")
+                        sym_path = osp.abspath(wmlu.change_name(ckpt_path_best,basename="ckpt_best"))
                         wmlu.symlink(ckpt_path_best,sym_path)
                     except:
                         pass
@@ -661,8 +664,8 @@ class GLASS(torch.nn.Module):
 
 
 
-    def tester(self, test_data, name):
-        ckpt_path = self.load_ckpt()
+    def tester(self, test_data, name,ckpt_path=None):
+        ckpt_path = self.load_ckpt(ckpt_path=ckpt_path)
         if ckpt_path is not None: 
             images, scores, segmentations, labels_gt, masks_gt,img_paths = self.predict(test_data)
             image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
@@ -674,8 +677,11 @@ class GLASS(torch.nn.Module):
 
         return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch
     
-    def load_ckpt(self):
-        ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
+    def load_ckpt(self,ckpt_path=None):
+        if ckpt_path is None:
+            ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
+        else:
+            ckpt_path = [ckpt_path]
         if len(ckpt_path) != 0:
             if len(ckpt_path)>0:
                 for cp in ckpt_path:

@@ -171,9 +171,12 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
         for i,ic in enumerate(in_channels):
             self.lateral_convs.append(nn.Conv2d(ic,channels,1))
             if i<len(in_channels)-1:
-                self.out_convs.append(ConvModule(channels,channels,3,1,1))
+                self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish")))
             else:
-                self.out_convs.append(ConvModule(channels*2,channels*2,3,1,1))
+                self.out_convs.append(ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish")))
+
+        self.output = ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"))
+
         
 
     def forward(self, images, eval=True):
@@ -195,7 +198,7 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
                 last_feature = F.interpolate(last_feature,scale_factor=2,mode='nearest')
                 last_feature = m(torch.cat([f,last_feature],dim=1))
         
-        feature = last_feature
+        feature = self.output(last_feature)
 
         feature = torch.permute(feature,[0,2,3,1])
         C = feature.shape[-1]
@@ -206,6 +209,7 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
     def train(self,mode=True):
         [m.train(mode=mode) for m in self.lateral_convs]
         [m.train(mode=mode) for m in self.out_convs]
+        self.output.train(mode=mode)
         if mode==False:
             self.backbone.eval()
 

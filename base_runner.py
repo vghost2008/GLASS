@@ -22,6 +22,7 @@ import time
 @click.option("--log_project", type=str, default="project")
 @click.option("--run_name", type=str, default="test")
 @click.option("--test", type=str, default="ckpt")
+@click.option("--ckpt_path", type=str, default=None)
 def main(**kwargs):
     pass
 

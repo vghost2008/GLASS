@@ -12,6 +12,7 @@ import glass
 import utils
 import numpy as np
 import time
+import wml.wtorch.train_toolkit as wtt
 from base_runner import *
 
 @main.result_callback()
@@ -24,6 +25,7 @@ def run(
         log_project,
         run_name,
         test,
+        ckpt_path,
 ):
     np.random.seed(int(time.time()))
     methods = {key: item for (key, item) in methods}
@@ -57,13 +59,18 @@ def run(
         models_dir = os.path.join(run_save_path, "models")
         os.makedirs(models_dir, exist_ok=True)
         for i, GLASS in enumerate(glass_list):
+            #######################################
+            wtt.register_forward_hook(GLASS,wtt.isfinite_hook)
+            wtt.register_forward_hook(GLASS,wtt.islarge_hook)
+            wtt.register_tensor_hook(GLASS,wtt.tensor_isfinite_hook)
+            #######################################
             flag = 0., 0., 0., 0., 0., -1.
             if GLASS.backbone.seed is not None:
                 #utils.fix_seeds(GLASS.backbone.seed, device)
                 pass
 
             GLASS.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name,run_save_path=run_save_path,tb_dir="tb_eval")
-            i_auroc, i_ap, p_auroc, p_ap, p_pro, epoch = GLASS.tester(dataloaders["testing"], dataset_name)
+            i_auroc, i_ap, p_auroc, p_ap, p_pro, epoch = GLASS.tester(dataloaders["testing"], dataset_name,ckpt_path=ckpt_path)
             print(f"dataset_name: {dataset_name}, M:{(i_auroc+p_auroc)/2:.3f}, image_auroc: {i_auroc}, image_ap: {i_ap}, pixel_auroc: {p_auroc}, pixel_ap: {p_ap}, pixel_pro: {p_pro}, best_epoch: {epoch}\n" )
             sys.stdout.flush()
             result_collect.append(
