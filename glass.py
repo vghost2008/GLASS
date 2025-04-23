@@ -57,6 +57,7 @@ class GLASS(torch.nn.Module):
         super(GLASS, self).__init__()
         self.device = device
         self.scaler = torch.cuda.amp.GradScaler(init_scale=100.0)
+        self.max_norm = 16
         self.prf = None
 
 
@@ -631,9 +632,19 @@ class GLASS(torch.nn.Module):
 
             self.scaler.scale(loss).backward()
             if self.pre_proj > 0:
+                if self.max_norm is not None:
+                    self.scaler.unscale_(self.proj_opt) #将梯度都除以self.scaler._scale
+                    self.total_norm_proj = torch.nn.utils.clip_grad_norm_(self.pre_projection.parameters(), max_norm=self.max_norm, norm_type=2)
                 self.scaler.step(self.proj_opt)
             if self.train_backbone:
+                if self.max_norm is not None:
+                    self.scaler.unscale_(self.backbone_opt) #将梯度都除以self.scaler._scale
+                    self.total_norm_backbone= torch.nn.utils.clip_grad_norm_(self.forward_modules.train_parameters(), max_norm=self.max_norm, norm_type=2)
                 self.scaler.step(self.backbone_opt)
+
+            if self.max_norm is not None:
+                self.scaler.unscale_(self.dsc_opt) #将梯度都除以self.scaler._scale
+                self.total_norm_dsc = torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=self.max_norm, norm_type=2)
             self.scaler.step(self.dsc_opt)
             self.scaler.update()
 

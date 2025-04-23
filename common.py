@@ -88,20 +88,24 @@ class NetworkFeatureAggregator(torch.nn.Module):
             backbone: torchvision.model
             layers_to_extract_from: [list of str]
         """
-        self.layers_to_extract_from = layers_to_extract_from
+        self.outputs = {}
         self.backbone = backbone
         self.device = device
         self.train_backbone = train_backbone
-        if not hasattr(backbone, "hook_handles"):
-            self.backbone.hook_handles = []
-        for handle in self.backbone.hook_handles:
-            handle.remove()
-        self.outputs = {}
+        if hasattr(backbone,'out_dict'):
+            out_dict = backbone.out_dict
+            self.layers_to_extract_from = out_dict
+        else:
+            self.layers_to_extract_from = layers_to_extract_from
 
-        for extract_layer in layers_to_extract_from:
-            self.register_hook(extract_layer)
+            if not hasattr(backbone, "hook_handles"):
+                self.backbone.hook_handles = []
+            for handle in self.backbone.hook_handles:
+                handle.remove()
+    
+            for extract_layer in layers_to_extract_from:
+                self.register_hook(extract_layer)
 
-        #self.backbone = torch.compile(self.backbone)
 
         self.to(self.device)
 
@@ -112,7 +116,9 @@ class NetworkFeatureAggregator(torch.nn.Module):
         else:
             with torch.no_grad():
                 try:
-                    _ = self.backbone(images)
+                    res = self.backbone(images)
+                    if isinstance(res,dict) and len(self.outputs)==0:
+                        self.outputs = res
                 except LastLayerToExtractReachedException:
                     pass
         return self.outputs
@@ -220,6 +226,14 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
         self.output.train(mode=mode)
         if mode==False:
             self.backbone.eval()
+
+    
+    def train_parameters(self):
+        res = []
+        res.extend(list(self.lateral_convs))
+        res.extend(list(self.out_convs))
+        res.extend(list(self.output))
+        return res
 
 
 

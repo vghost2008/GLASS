@@ -1,5 +1,14 @@
 import torchvision.models as models
 import timm
+import timm
+from torchvision import transforms
+from PIL import Image
+import torch
+import os
+import numpy as np
+from torchvision.models.detection import maskrcnn_resnet50_fpn_v2, MaskRCNN_ResNet50_FPN_V2_Weights
+from torchvision.utils import draw_bounding_boxes,draw_segmentation_masks
+from torchvision.transforms.functional import to_pil_image
 
 _BACKBONES = {
     "alexnet": "models.alexnet(pretrained=True)",
@@ -44,8 +53,15 @@ _BACKBONES = {
     "efficientnetv2_l": 'timm.create_model("tf_efficientnetv2_l", pretrained=True)',
     "efficientnet_b3a": 'timm.create_model("efficientnet_b3a", pretrained=True)',
     "convnext": 'timm.create_model("convnextv2_base", pretrained=True)',
+    "maskrcnn": 'create_maskrcnn()',
 }
 
+def create_maskrcnn():
+    weights = MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT
+    model = maskrcnn_resnet50_fpn_v2(weights=weights, progress=False)
+    model = model.backbone
+    model = model.eval()
+    return model
 
 def load(name):
     backbone = eval(_BACKBONES[name])
@@ -53,5 +69,8 @@ def load(name):
         backbone.out_info = [["layer1","layer2","layer3","layer4"],[256,512,1024,2048]]
     elif name == "convnext":
         backbone.out_info = [["stages.0","stages.1","stages.2","stages.3"],[128,256,512,1024]]
+    elif name == "maskrcnn":
+        backbone.out_info = [['0','1','2','3'],[256,256,256,256]]
+        backbone.out_dict = ['0','1','2','3']
     
     return backbone
