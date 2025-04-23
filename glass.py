@@ -531,15 +531,11 @@ class GLASS(torch.nn.Module):
                 r_t = torch.tensor([torch.quantile(dist_t, q=self.radius)]).to(self.device)
     
                 for step in range(self.step + 1):
-                    scores,logits = self.discriminator(torch.cat([true_feats, gaus_feats]))
-                    true_scores = scores[:len(true_feats)]
-                    gaus_scores = scores[len(true_feats):]
-                    true_logits_scores = logits[:len(true_feats)]
-                    gaus_logits_scores = logits[len(true_feats):]
+                    gaus_scores,gaus_logits_scores = self.discriminator(gaus_feats)
+                    #true_scores = scores[:len(true_feats)]
+                    #true_logits_scores = logits[:len(true_feats)]
                     with torch.cuda.amp.autocast(enabled=False):
-                        true_loss = torch.nn.BCEWithLogitsLoss()(true_logits_scores.float(), torch.zeros_like(true_scores.float()))
                         gaus_loss = torch.nn.BCEWithLogitsLoss()(gaus_logits_scores.float(), torch.ones_like(gaus_scores.float()))
-                    bce_loss = true_loss + gaus_loss
     
                     if step == self.step:
                         break
@@ -568,6 +564,16 @@ class GLASS(torch.nn.Module):
                         proj = (alpha / (h_norm + 1e-10)).view(-1, 1)
                         h = proj * h
                         gaus_feats = proj_feats + h # gaus_feats将处理离proj_feats, [r,2r]的范围内
+    
+                if True:
+                    true_scores,true_logits_scores = self.discriminator(gaus_feats)
+                    #true_scores = scores[:len(true_feats)]
+                    #gaus_scores = scores[len(true_feats):]
+                    #true_logits_scores = logits[:len(true_feats)]
+                    #gaus_logits_scores = logits[len(true_feats):]
+                    with torch.cuda.amp.autocast(enabled=False):
+                        true_loss = torch.nn.BCEWithLogitsLoss()(true_logits_scores.float(), torch.zeros_like(true_scores.float()))
+                    bce_loss = true_loss + gaus_loss
     
                 fake_points = fake_feats[mask_s_gt[:, 0] == 1]
                 true_points = true_feats[mask_s_gt[:, 0] == 1]
