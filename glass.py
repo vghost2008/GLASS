@@ -254,24 +254,25 @@ class GLASS(torch.nn.Module):
         best_record = None
         for i_epoch in pbar:
             self.forward_modules.eval()
-            with torch.no_grad():  # compute center
-                for i, data in enumerate(training_data):
-                    img = data["image"]
-                    img = img.to(torch.float).to(self.device)
-                    if self.pre_proj > 0: #True
-                        outputs = self.pre_projection(self._embed(img, evaluation=False)[0])
+            with torch.cuda.amp.autocast():
+                with torch.no_grad():  # compute center
+                    for i, data in enumerate(training_data):
+                        img = data["image"]
+                        img = img.to(torch.float).to(self.device)
+                        if self.pre_proj > 0: #True
+                            outputs = self.pre_projection(self._embed(img, evaluation=False)[0])
+                            outputs = outputs[0] if len(outputs) == 2 else outputs
+                        else:
+                            outputs = self._embed(img, evaluation=False)[0]
                         outputs = outputs[0] if len(outputs) == 2 else outputs
-                    else:
-                        outputs = self._embed(img, evaluation=False)[0]
-                    outputs = outputs[0] if len(outputs) == 2 else outputs
-                    outputs = outputs.reshape(img.shape[0], -1, outputs.shape[-1])
-
-                    batch_mean = torch.mean(outputs, dim=0)
-                    if i == 0:
-                        self.c = batch_mean
-                    else:
-                        self.c += batch_mean
-                self.c /= len(training_data)
+                        outputs = outputs.reshape(img.shape[0], -1, outputs.shape[-1])
+    
+                        batch_mean = torch.mean(outputs, dim=0)
+                        if i == 0:
+                            self.c = batch_mean
+                        else:
+                            self.c += batch_mean
+                    self.c /= len(training_data)
 
             pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
             update_state_dict()
