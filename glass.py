@@ -750,9 +750,9 @@ class GLASS(torch.nn.Module):
         image_ap = image_scores["ap"]
 
         if len(masks_gt) > 0:
-            eval_segmentations = npresize_mask(segmentations,scale_factor=0.25,thread_nr=10)
+            eval_segmentations = npresize_mask(segmentations,scale_factor=0.25)
             eval_masks_gt = [np.squeeze(v,axis=0) for v in masks_gt]
-            eval_masks_gt = npresize_mask(eval_masks_gt,scale_factor=0.25,thread_nr=10)
+            eval_masks_gt = npresize_mask(eval_masks_gt,scale_factor=0.25)
             #eval_masks_gt = masks_gt
             #eval_segmentations = np.array(segmentations)
             best_threshold, best_precision, best_recall, best_f1 = metrics.compute_best_pr_re(eval_masks_gt,eval_segmentations)
