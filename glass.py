@@ -288,6 +288,7 @@ class GLASS(torch.nn.Module):
             try:
                 pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
             except Exception as e:
+                torch.cuda.empty_cache()
                 print(f"\nERROR: {e}\n")
                 error_nr += 1
                 if error_nr>100:
