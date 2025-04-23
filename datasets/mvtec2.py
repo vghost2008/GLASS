@@ -141,7 +141,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         if split == DatasetSplit.TRAIN:
             self.transform_img = [
                 Resize(self.resize),
-                ColorJitter(brightness_factor, contrast_factor, saturation_factor),
+                ColorJitter(p=0.2),
                 RandomHorizontalFlip(h_flip_p),
                 RandomVerticalFlip(v_flip_p),
                 RandomGrayscale(gray_p),

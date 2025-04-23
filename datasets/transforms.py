@@ -15,10 +15,18 @@ class Resize(transforms.Resize):
             results['fg_mask'] = fg_mask
         return results
 
-class ColorJitter(transforms.ColorJitter):
+class ColorJitter(nn.Module):
+    def __init__(self,brightness=[0.5,1.5],p=0.5):
+        super().__init__()
+        self.brightness = brightness
+        self.p = p
+
     def forward(self,results):
+        if torch.rand(1) > self.p:
+            return results
+        factor = float(torch.empty(1).uniform_(self.brightness[0], self.brightness[1]))
         img = results['img']
-        img = super().forward(img)
+        img = F.adjust_brightness(img,factor)
         results['img'] = img
         return results
 
@@ -69,7 +77,6 @@ class RandomVerticalFlip(nn.Module):
             fg_mask = results['fg_mask']
             results['fg_mask'] = F.vflip(fg_mask)
         return results
-
 class RandomGrayscale(transforms.RandomGrayscale):
     def forward(self,results):
         img = results['img']
