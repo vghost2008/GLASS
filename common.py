@@ -184,11 +184,11 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
         for i,ic in enumerate(in_channels):
             self.lateral_convs.append(nn.Conv2d(ic,channels,1))
             if i<len(in_channels)-1:
-                self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish")))
+                self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
             else:
-                self.out_convs.append(ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish")))
+                self.out_convs.append(ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
 
-        self.output = ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"))
+        self.output = ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN'))
         wtt.set_bn_eps(self,1e-3)
 
         
@@ -230,9 +230,9 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
     
     def train_parameters(self):
         res = []
-        res.extend(list(self.lateral_convs))
-        res.extend(list(self.out_convs))
-        res.extend(list(self.output))
+        res.extend(list(self.lateral_convs.parameters()))
+        res.extend(list(self.out_convs.parameters()))
+        res.extend(list(self.output.parameters()))
         return res
 
 
