@@ -163,6 +163,7 @@ def torch_format_2_numpy_img(img):
 
 def update_threshold_file(dir_name,classname,threshold):
     file = osp.join(dir_name,"threshold.json")
+    print(f"Threshold file {file}")
     if osp.exists(file):
         with open(file,"r") as f:
             data = json.load(f)

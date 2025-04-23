@@ -178,13 +178,17 @@ class MVTecDataset2(torch.utils.data.Dataset):
         ]
         self.transform_aug_img = transforms.Compose(self.transform_aug_img)
 
-        self.gt_mask_files = self.get_gt_mask_files()
+        self.gt_mask_files = self.get_gt_mask_files(name=self.classname)
+        self.all_gt_mask_files = self.get_gt_mask_files()
         print(f"img_transform: {self.transform_img}")
         print(f"aug_img_transform: {self.transform_aug_img}")
         print(f"mask_transform : {self.transform_mask}")
 
-    def get_gt_mask_files(self):
-        path = osp.join(self.source,self.classname)
+    def get_gt_mask_files(self,name=None):
+        if name is not None:
+            path = osp.join(self.source,name)
+        else:
+            path = self.source
         files = wmlu.get_files(path,suffix=".png")
         def filter_func(path):
             return "ground_truth" in path
@@ -194,16 +198,17 @@ class MVTecDataset2(torch.utils.data.Dataset):
         return files
         
     def get_mask_by_files(self,img_shape, feat_size,mask_fg=None):
+        files = random.choice([self.gt_mask_files,self.all_gt_mask_files])
         max_try = 10
         while max_try>0:
-            mask_s,mask_l = self._get_mask_by_files(img_shape,feat_size,mask_fg)
+            mask_s,mask_l = self._get_mask_by_files(img_shape,feat_size,mask_fg,files=files)
             if np.sum(mask_s)>0:
                 break
             max_try -= 1
         return mask_s,mask_l
 
-    def _get_mask_by_files(self,img_shape, feat_size,mask_fg=None):
-        gt_mask = random.choice(self.gt_mask_files)
+    def _get_mask_by_files(self,img_shape, feat_size,mask_fg=None,files=None):
+        gt_mask = random.choice(files)
         mask = PIL.Image.open(gt_mask)
         mask = np.array(mask)
         mask = wmli.resize_img(mask,size=(img_shape[2],img_shape[1]),keep_aspect_ratio=False,interpolation=cv2.INTER_NEAREST)
@@ -304,7 +309,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
                 aug = self.transform_aug_img(aug)
 
             s = image.shape[-2:]
-            if np.random.rand()<0.9:
+            if np.random.rand()<0.8:
                 pl_max = np.random.randint(3,6+1)
                 mask_all = perlin_mask(image.shape, [s[0]//self.downsampling,s[1]//self.downsampling], 0, pl_max, mask_fg, 1)
             else:

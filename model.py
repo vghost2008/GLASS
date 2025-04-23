@@ -23,8 +23,9 @@ class Discriminator(torch.nn.Module):
             self.body.add_module('block%d' % (i + 1),
                                  torch.nn.Sequential(
                                      torch.nn.Linear(_in, _hidden),
-                                     torch.nn.BatchNorm1d(_hidden),
-                                     torch.nn.LeakyReLU(0.2)
+                                     torch.nn.BatchNorm1d(_hidden,eps=1e-3),
+                                     #torch.nn.LeakyReLU(0.2)
+                                     torch.nn.SiLU(),
                                  ))
         #self.tail = torch.nn.Sequential(torch.nn.Linear(_hidden, 1, bias=False),
         #                                torch.nn.Sigmoid())
@@ -33,9 +34,10 @@ class Discriminator(torch.nn.Module):
         self.apply(init_weight)
 
     def forward(self, x):
-        x = self.body(x)
-        x = self.tail(x)
-        score = self.sigmoid(x)
+        with torch.cuda.amp.autocast(False):
+            x = self.body(x.float())
+            x = self.tail(x)
+            score = self.sigmoid(x)
         return score,x
 
 
@@ -59,7 +61,8 @@ class Projection(torch.nn.Module):
 
     def forward(self, x):
 
-        x = self.layers(x)
+        with torch.cuda.amp.autocast(False):
+            x = self.layers(x.float())
         return x
 
 

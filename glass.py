@@ -24,7 +24,7 @@ import wml.wtorch.summary as wsummary
 import wml.wtorch.utils as wtu
 import wml.wtorch.train_toolkit as wtt
 import wml.img_utils as wmli
-from wml.semantic.mask_utils import npresize_mask,resize_mask
+from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
 
 LOGGER = logging.getLogger(__name__)
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -142,6 +142,7 @@ class GLASS(torch.nn.Module):
         optimizer = torch.optim.AdamW(
                 weights,
                 lr=self.lr,
+                weight_decay=1e-5,
             )
         if len(bn_weights)>0:
             optimizer.add_param_group({"params": bn_weights,"weight_decay":0.0})
@@ -671,7 +672,8 @@ class GLASS(torch.nn.Module):
         ckpt_path = self.load_ckpt(ckpt_path=ckpt_path)
         if ckpt_path is not None: 
             images, scores, segmentations, labels_gt, masks_gt,img_paths = self.predict(test_data)
-            image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
+            with wmlu.TimeThis("_eval"):
+                image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
                                                                                      labels_gt, masks_gt, name, path='eval',img_paths=img_paths)
             epoch = int(ckpt_path.split('_')[-1].split('.')[0])
         else:
@@ -719,9 +721,9 @@ class GLASS(torch.nn.Module):
         image_ap = image_scores["ap"]
 
         if len(masks_gt) > 0:
-            eval_segmentations = npresize_mask(segmentations,scale_factor=0.25)
+            eval_segmentations = npresize_mask(segmentations,scale_factor=0.25,thread_nr=10)
             eval_masks_gt = [np.squeeze(v,axis=0) for v in masks_gt]
-            eval_masks_gt = npresize_mask(eval_masks_gt,scale_factor=0.25)
+            eval_masks_gt = npresize_mask(eval_masks_gt,scale_factor=0.25,thread_nr=10)
             #eval_masks_gt = masks_gt
             #eval_segmentations = np.array(segmentations)
             best_threshold, best_precision, best_recall, best_f1 = metrics.compute_best_pr_re(eval_masks_gt,eval_segmentations)
