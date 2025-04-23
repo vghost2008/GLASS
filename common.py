@@ -176,6 +176,7 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
                 self.out_convs.append(ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish")))
 
         self.output = ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"))
+        wtt.set_bn_eps(self,1e-3)
 
         
 

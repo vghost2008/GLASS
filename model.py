@@ -56,7 +56,7 @@ class Projection(torch.nn.Module):
             self.layers.add_module(f"{i}fc", torch.nn.Linear(_in, _out))
             if i < n_layers - 1:
                 if layer_type > 1:
-                    self.layers.add_module(f"{i}relu", torch.nn.LeakyReLU(.2))
+                    self.layers.add_module(f"{i}act", torch.nn.SiLU())
         self.apply(init_weight)
 
     def forward(self, x):

@@ -26,6 +26,15 @@ import wml.wtorch.train_toolkit as wtt
 import wml.img_utils as wmli
 from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
 
+def trace_grad_fn(grad_fn, depth=0):
+    if grad_fn is None:
+        return
+    print("  " * depth, grad_fn.name())
+    for next_fn, _ in grad_fn.next_functions:
+        if next_fn is not None:
+            trace_grad_fn(next_fn, depth + 1)
+
+
 LOGGER = logging.getLogger(__name__)
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -180,6 +189,7 @@ class GLASS(torch.nn.Module):
         return features, shapes #patch_shapes ((H0,W0),(H1,W1),...)
 
     def trainer(self, training_data, val_data, name):
+        print(self)
         state_dict = {}
         ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
         ckpt_path_save = os.path.join(self.ckpt_dir, "ckpt.pth")
@@ -252,6 +262,7 @@ class GLASS(torch.nn.Module):
         pbar = tqdm.tqdm(range(self.meta_epochs), unit='epoch')
         pbar_str1 = ""
         best_record = None
+        error_nr = 0
         for i_epoch in pbar:
             self.forward_modules.eval()
             with torch.cuda.amp.autocast():
@@ -274,7 +285,16 @@ class GLASS(torch.nn.Module):
                             self.c += batch_mean
                     self.c /= len(training_data)
 
-            pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
+            try:
+                pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
+            except Exception as e:
+                print(f"\nERROR: {e}\n")
+                error_nr += 1
+                if error_nr>100:
+                    exit(-1)
+                else:
+                    continue
+
             update_state_dict()
 
             ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_{}.pth".format(i_epoch))
@@ -531,6 +551,7 @@ class GLASS(torch.nn.Module):
                 r_t = torch.tensor([torch.quantile(dist_t, q=self.radius)]).to(self.device)
     
                 for step in range(self.step + 1):
+                    gaus_feats = torch.tensor(gaus_feats.detach(),requires_grad=True)
                     gaus_scores,gaus_logits_scores = self.discriminator(gaus_feats)
                     #true_scores = scores[:len(true_feats)]
                     #true_logits_scores = logits[:len(true_feats)]
@@ -566,7 +587,7 @@ class GLASS(torch.nn.Module):
                         gaus_feats = proj_feats + h # gaus_feats将处理离proj_feats, [r,2r]的范围内
     
                 if True:
-                    true_scores,true_logits_scores = self.discriminator(gaus_feats)
+                    true_scores,true_logits_scores = self.discriminator(true_feats)
                     #true_scores = scores[:len(true_feats)]
                     #gaus_scores = scores[len(true_feats):]
                     #true_logits_scores = logits[:len(true_feats)]
