@@ -101,6 +101,8 @@ class NetworkFeatureAggregator(torch.nn.Module):
         for extract_layer in layers_to_extract_from:
             self.register_hook(extract_layer)
 
+        #self.backbone = torch.compile(self.backbone)
+
         self.to(self.device)
 
     def forward(self, images, eval=True):
@@ -123,6 +125,8 @@ class NetworkFeatureAggregator(torch.nn.Module):
 
     def register_hook(self, layer_name):
         module = self.find_module(self.backbone, layer_name)
+        if hasattr(module,"blocks"):
+            module = module.blocks
         if module is not None:
             forward_hook = ForwardHook(self.outputs, layer_name, self.layers_to_extract_from[-1])
             if isinstance(module, torch.nn.Sequential):
@@ -141,6 +145,7 @@ class NetworkFeatureAggregator(torch.nn.Module):
                 father, child = module_name.split('.', 1)
                 if name == father:
                     return self.find_module(module, child)
+        print(f"ERROR: find {module_name} faild.")
         return None
 
 class ForwardHook:
@@ -162,6 +167,8 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
     """Efficient extraction of network features."""
 
     def __init__(self, backbone, layers_to_extract_from, device, train_backbone=False,in_channels=[256,512,1024,2048]):
+        if hasattr(backbone,"out_info"):
+            layers_to_extract_from,in_channels = backbone.out_info
         super().__init__(backbone=backbone,layers_to_extract_from=layers_to_extract_from,device=device,train_backbone=False)
         print(f"layers_to_extract_from: {self.layers_to_extract_from}")
         wtt.freeze_model(backbone)

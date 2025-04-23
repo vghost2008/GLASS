@@ -43,8 +43,15 @@ _BACKBONES = {
     "efficientnetv2_m": 'timm.create_model("tf_efficientnetv2_m", pretrained=True)',
     "efficientnetv2_l": 'timm.create_model("tf_efficientnetv2_l", pretrained=True)',
     "efficientnet_b3a": 'timm.create_model("efficientnet_b3a", pretrained=True)',
+    "convnext": 'timm.create_model("convnextv2_base", pretrained=True)',
 }
 
 
 def load(name):
-    return eval(_BACKBONES[name])
+    backbone = eval(_BACKBONES[name])
+    if name == "wideresnet50":
+        backbone.out_info = [["layer1","layer2","layer3","layer4"],[256,512,1024,2048]]
+    elif name == "convnext":
+        backbone.out_info = [["stages.0","stages.1","stages.2","stages.3"],[128,256,512,1024]]
+    
+    return backbone
