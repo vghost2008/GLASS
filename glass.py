@@ -299,8 +299,13 @@ class GLASS(torch.nn.Module):
 
             update_state_dict()
 
-            ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_{}.pth".format(i_epoch))
-            torch.save(state_dict, ckpt_path_best)
+            ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt.pth".format(i_epoch))
+            try:
+                if osp.exists(ckpt_path_best):
+                    os.remove(ckpt_path_best)
+                torch.save(state_dict, ckpt_path_best)
+            except Exception as e:
+                print(f"ERROR: {e}")
 
             if (i_epoch + self.eval_offset) % self.eval_epochs == 0:
                 images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
@@ -596,7 +601,7 @@ class GLASS(torch.nn.Module):
                     #gaus_logits_scores = logits[len(true_feats):]
                     with torch.cuda.amp.autocast(enabled=False):
                         true_loss = torch.nn.BCEWithLogitsLoss()(true_logits_scores.float(), torch.zeros_like(true_scores.float()))
-                    bce_loss = true_loss + gaus_loss
+                    #bce_loss = true_loss + gaus_loss
     
                 fake_points = fake_feats[mask_s_gt[:, 0] == 1]
                 true_points = true_feats[mask_s_gt[:, 0] == 1]
@@ -627,8 +632,23 @@ class GLASS(torch.nn.Module):
                 output = torch.cat([1 - fake_scores_, fake_scores_], dim=1)
                 with torch.cuda.amp.autocast(enabled=False):
                     focal_loss = self.focal_loss(output.float(), mask_.float())*10
+                
+                all_loss = [true_loss,gaus_loss,focal_loss]
+                info = ""
+                if not torch.isfinite(true_loss):
+                    info += f"true loss is infinite,"
+                if not torch.isfinite(gaus_loss):
+                    info += f"gaus loss is infinite,"
+                if not torch.isfinite(focal_loss):
+                    info += f"focal loss is infinite,"
+                all_loss = list(filter(torch.isfinite,all_loss))
+                if len(all_loss) == 0:
+                    print(info)
+                    return "",0,0
+                if len(all_loss)!=3:
+                    print(info)
 
-                loss = bce_loss + focal_loss
+                loss = sum(all_loss)
 
             self.scaler.scale(loss).backward()
             if self.pre_proj > 0:
