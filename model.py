@@ -61,8 +61,7 @@ class Projection(torch.nn.Module):
 
     def forward(self, x):
 
-        with torch.cuda.amp.autocast(False):
-            x = self.layers(x.float())
+        x = self.layers(x)
         return x
 
 

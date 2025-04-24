@@ -273,7 +273,7 @@ class GLASS(torch.nn.Module):
             self.forward_modules.eval()
             with torch.cuda.amp.autocast():
                 with torch.no_grad():  # compute center
-                    print(f"Get center...")
+                    print(f"Get center {i_epoch} ...")
                     gct0 = time.time()
                     sys.stdout.flush()
                     for i, data in enumerate(base_training_data):
@@ -293,16 +293,14 @@ class GLASS(torch.nn.Module):
                         else:
                             self.c += batch_mean
                     self.c /= len(base_training_data)
-                    print(f"Get center finish, time cost {time.time()-gct0:.3f}.")
+                    print(f"Get center finish, time cost {time.time()-gct0:.3f}s.")
                     sys.stdout.flush()
 
-            #try:
-            #except Exception as e:
-            if True:
+            try:
                 pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
-            else:
+            except Exception as e:
                 torch.cuda.empty_cache()
-                #print(f"\nERROR: {e}\n")
+                print(f"\nERROR: {e}\n")
                 error_nr += 1
                 if error_nr>100:
                     exit(-1)
@@ -342,7 +340,9 @@ class GLASS(torch.nn.Module):
                     ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
                     torch.save(state_dict, ckpt_path_best)
                     shutil.rmtree(eval_path, ignore_errors=True)
-                    shutil.copytree(train_path, eval_path)
+                    if osp.exists(train_path):
+                        shutil.copytree(train_path, eval_path)
+                    
 
                 elif image_auroc + pixel_auroc > best_record[0] + best_record[2]:
                     best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
@@ -350,7 +350,8 @@ class GLASS(torch.nn.Module):
                     ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
                     torch.save(state_dict, ckpt_path_best)
                     shutil.rmtree(eval_path, ignore_errors=True)
-                    shutil.copytree(train_path, eval_path)
+                    if osp.exists(train_path):
+                        shutil.copytree(train_path, eval_path)
                     try:
                         ckpt_path_best = osp.abspath(ckpt_path_best)
                         sym_path = wmlu.change_name(ckpt_path_best,basename="ckpt_best")
@@ -658,7 +659,7 @@ class GLASS(torch.nn.Module):
                     info += f"gaus loss is infinite,"
                 if not torch.isfinite(focal_loss):
                     info += f"focal loss is infinite,"
-                model_loss = list(filter(torch.isfinite,all_loss))
+                model_loss = list(filter(torch.isfinite,model_loss))
                 if len(model_loss) == 0:
                     print(info)
                     return "",0,0
