@@ -9,6 +9,7 @@ import numpy as np
 from torchvision.models.detection import maskrcnn_resnet50_fpn_v2, MaskRCNN_ResNet50_FPN_V2_Weights
 from torchvision.utils import draw_bounding_boxes,draw_segmentation_masks
 from torchvision.transforms.functional import to_pil_image
+from .models.vit_encoder import load
 
 _BACKBONES = {
     "alexnet": "models.alexnet(pretrained=True)",
@@ -54,6 +55,7 @@ _BACKBONES = {
     "efficientnet_b3a": 'timm.create_model("efficientnet_b3a", pretrained=True)',
     "convnext": 'timm.create_model("convnextv2_base", pretrained=True)',
     "maskrcnn": 'create_maskrcnn()',
+    "dino": 'create_dino()',
 }
 
 def create_maskrcnn():
@@ -63,6 +65,11 @@ def create_maskrcnn():
     model = model.eval()
     return model
 
+def create_dino():
+    encoder = load("dinov2reg_vit_base_14")
+    embed_dim, num_heads = 768, 12
+    return encoder
+
 def load(name):
     backbone = eval(_BACKBONES[name])
     if name == "wideresnet50":
@@ -70,6 +77,9 @@ def load(name):
     elif name == "convnext":
         backbone.out_info = [["stages.0","stages.1","stages.2","stages.3"],[128,256,512,1024]]
     elif name == "maskrcnn":
+        backbone.out_info = [['0','1','2','3'],[256,256,256,256]]
+        backbone.out_dict = ['0','1','2','3']
+    elif name == "dino":
         backbone.out_info = [['0','1','2','3'],[256,256,256,256]]
         backbone.out_dict = ['0','1','2','3']
     
