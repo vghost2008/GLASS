@@ -67,7 +67,7 @@ def run(
 
             GLASS.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name,run_save_path=run_save_path)
             if test == 'ckpt':
-                flag = GLASS.trainer(dataloaders["training"], dataloaders["testing"], dataset_name)
+                flag = GLASS.trainer(dataloaders["training"], dataloaders["testing"], dataloaders["base_training"],dataset_name)
                 if type(flag) == int:
                     row_dist = {'Class': dataloaders["training"].name, 'Distribution': flag, 'Foreground': flag}
                     df = pd.concat([df, pd.DataFrame(row_dist, index=[0])])

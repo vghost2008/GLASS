@@ -15,6 +15,7 @@ import torch
 import tqdm
 import common
 import metrics
+import sys
 import cv2
 import utils
 import glob
@@ -24,6 +25,7 @@ import wml.wtorch.summary as wsummary
 import wml.wtorch.utils as wtu
 import wml.wtorch.train_toolkit as wtt
 import wml.img_utils as wmli
+import time
 from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
 
 def trace_grad_fn(grad_fn, depth=0):
@@ -189,11 +191,14 @@ class GLASS(torch.nn.Module):
 
         return features, shapes #patch_shapes ((H0,W0),(H1,W1),...)
 
-    def trainer(self, training_data, val_data, name):
+    def trainer(self, training_data, val_data, base_training_data,name):
         print(self)
         state_dict = {}
         ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
         ckpt_path_save = os.path.join(self.ckpt_dir, "ckpt.pth")
+
+        if base_training_data is None:
+            base_training_data = training_data
 
         '''
         if len(ckpt_path) != 0:
@@ -242,7 +247,7 @@ class GLASS(torch.nn.Module):
         if self.distribution == 1:
             self.forward_modules.eval()
             with torch.no_grad():
-                for i, data in enumerate(training_data):
+                for i, data in enumerate(base_training_data):
                     img = data["image"]
                     img = img.to(torch.float).to(self.device)
                     batch_mean = torch.mean(img, dim=0)
@@ -250,7 +255,7 @@ class GLASS(torch.nn.Module):
                         self.c = batch_mean
                     else:
                         self.c += batch_mean
-                self.c /= len(training_data)
+                self.c /= len(base_training_data)
 
             avg_img = utils.torch_format_2_numpy_img(self.c.detach().cpu().numpy())
             self.svd = utils.distribution_judge(avg_img, name)
@@ -268,7 +273,10 @@ class GLASS(torch.nn.Module):
             self.forward_modules.eval()
             with torch.cuda.amp.autocast():
                 with torch.no_grad():  # compute center
-                    for i, data in enumerate(training_data):
+                    print(f"Get center...")
+                    gct0 = time.time()
+                    sys.stdout.flush()
+                    for i, data in enumerate(base_training_data):
                         img = data["image"]
                         img = img.to(torch.float).to(self.device)
                         if self.pre_proj > 0: #True
@@ -284,13 +292,17 @@ class GLASS(torch.nn.Module):
                             self.c = batch_mean
                         else:
                             self.c += batch_mean
-                    self.c /= len(training_data)
+                    self.c /= len(base_training_data)
+                    print(f"Get center finish, time cost {time.time()-gct0:.3f}.")
+                    sys.stdout.flush()
 
-            try:
+            #try:
+            #except Exception as e:
+            if True:
                 pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
-            except Exception as e:
+            else:
                 torch.cuda.empty_cache()
-                print(f"\nERROR: {e}\n")
+                #print(f"\nERROR: {e}\n")
                 error_nr += 1
                 if error_nr>100:
                     exit(-1)
@@ -308,6 +320,9 @@ class GLASS(torch.nn.Module):
                 print(f"ERROR: {e}")
 
             if (i_epoch + self.eval_offset) % self.eval_epochs == 0:
+                print(f"Begin eval...")
+                sys.stdout.flush()
+                t0 = time.time()
                 images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
                 image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
                                                                                          labels_gt, masks_gt, name,img_paths=img_paths)
@@ -345,12 +360,14 @@ class GLASS(torch.nn.Module):
 
                 pbar_str1 = f" IAUC:{round(image_auroc * 100, 2)}({round(best_record[0] * 100, 2)})" \
                             f" PAUC:{round(pixel_auroc * 100, 2)}({round(best_record[2] * 100, 2)})" \
+                            f" F1:{round(best_f1* 100, 2)}({round(best_record[4] * 100, 2)})" \
                             f" Precision:{round(best_precision* 100, 2)}({round(best_record[1] * 100, 2)})" \
                             f" Recall:{round(best_recall* 100, 2)}({round(best_record[2] * 100, 2)})" \
-                            f" PRO:{round(best_f1* 100, 2)}({round(best_record[4] * 100, 2)})" \
                             f" E:{i_epoch}({best_record[-1]})"
                 pbar_str += pbar_str1
                 pbar.set_description_str(pbar_str)
+                print(f"Eval finish, time cost {time.time()-t0:.3f}s")
+                sys.stdout.flush()
 
             torch.save(state_dict, ckpt_path_save)
         return best_record
@@ -633,7 +650,7 @@ class GLASS(torch.nn.Module):
                 with torch.cuda.amp.autocast(enabled=False):
                     focal_loss = self.focal_loss(output.float(), mask_.float())*10
                 
-                all_loss = [true_loss,gaus_loss,focal_loss]
+                model_loss = [true_loss,gaus_loss,focal_loss]
                 info = ""
                 if not torch.isfinite(true_loss):
                     info += f"true loss is infinite,"
@@ -641,14 +658,14 @@ class GLASS(torch.nn.Module):
                     info += f"gaus loss is infinite,"
                 if not torch.isfinite(focal_loss):
                     info += f"focal loss is infinite,"
-                all_loss = list(filter(torch.isfinite,all_loss))
-                if len(all_loss) == 0:
+                model_loss = list(filter(torch.isfinite,all_loss))
+                if len(model_loss) == 0:
                     print(info)
                     return "",0,0
-                if len(all_loss)!=3:
+                if len(model_loss)!=3:
                     print(info)
 
-                loss = sum(all_loss)
+                loss = sum(model_loss)
 
             self.scaler.scale(loss).backward()
             if self.pre_proj > 0:
@@ -709,7 +726,7 @@ class GLASS(torch.nn.Module):
             all_r_f_ = np.mean(all_r_f)
             sample_num = sample_num + img.shape[0]
 
-            pbar_str = f"epoch:{cur_epoch} loss:{all_loss_:.2e}"
+            pbar_str = f"{input_data.dataset.classname}: epoch:{cur_epoch} loss:{all_loss_:.2e}"
             pbar_str += f" pt:{all_p_true_ * 100:.2f}"
             pbar_str += f" pf:{all_p_fake_ * 100:.2f}"
             pbar_str += f" rt:{all_r_t_:.2f}"

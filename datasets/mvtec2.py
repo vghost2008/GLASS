@@ -47,6 +47,7 @@ class DatasetSplit(Enum):
     TRAIN = "train"
     TEST = "test_public"
     PREDICT="predict"
+    BASE_TRAIN="base_train"
 
 
 class MVTecDataset2(torch.utils.data.Dataset):
@@ -180,6 +181,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
 
         self.gt_mask_files = self.get_gt_mask_files(name=self.classname)
         self.all_gt_mask_files = self.get_gt_mask_files()
+        print(f"classname {self.classname}, split {self.split}, len {len(self.data_to_iterate)}")
         print(f"img_transform: {self.transform_img}")
         print(f"aug_img_transform: {self.transform_aug_img}")
         print(f"mask_transform : {self.transform_mask}")
@@ -367,7 +369,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         imgpaths_per_class = {}
         maskpaths_per_class = {}
 
-        if self.split == DatasetSplit.TRAIN:
+        if self.split == DatasetSplit.TRAIN or self.split == DatasetSplit.BASE_TRAIN:
             splits = ["train","validation"]
         elif self.split == DatasetSplit.PREDICT:
             splits = ["test_private",  "test_private_mixed"]

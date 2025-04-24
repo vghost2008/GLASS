@@ -1,9 +1,61 @@
 from sklearn import metrics
 from skimage import measure
+from sklearn.metrics import roc_auc_score,  precision_recall_curve, average_precision_score
 from wml.object_detection2.metrics.classifier_toolkit import precision_recall_curve
 import cv2
 import numpy as np
 import pandas as pd
+from adeval import  EvalAccumulatorCuda
+import torch
+
+def f1_score_max(y_true, y_score):
+    precs, recs, thrs = precision_recall_curve(y_true, y_score)
+
+    f1s = 2 * precs * recs / (precs + recs + 1e-7)
+    f1s = f1s[:-1]
+    return f1s.max()
+
+
+def ader_evaluator(pr_px, pr_sp, gt_px, gt_sp, use_metrics = ['I-AUROC', 'I-AP', 'I-F1_max','P-AUROC', 'P-AP', 'P-F1_max', 'AUPRO']):
+    if len(gt_px.shape) == 4:
+        gt_px = gt_px.squeeze(1)
+    if len(pr_px.shape) == 4:
+        pr_px = pr_px.squeeze(1)
+        
+    score_min = min(pr_sp)
+    score_max = max(pr_sp)
+    anomap_min = pr_px.min()
+    anomap_max = pr_px.max()
+    
+    accum = EvalAccumulatorCuda(score_min, score_max, anomap_min, anomap_max, skip_pixel_aupro=False, nstrips=200)
+    accum.add_anomap_batch(torch.tensor(pr_px).cuda(non_blocking=True),
+                           torch.tensor(gt_px.astype(np.uint8)).cuda(non_blocking=True))
+    
+    # for i in range(torch.tensor(pr_px).size(0)):
+    #     accum.add_image(torch.tensor(pr_sp[i]), torch.tensor(gt_sp[i]))
+    
+    metrics = accum.summary()
+    metric_results = {}
+    for metric in use_metrics:
+        if metric.startswith('I-AUROC'):
+            auroc_sp = roc_auc_score(gt_sp, pr_sp)
+            metric_results[metric] = auroc_sp
+        elif metric.startswith('I-AP'):
+            ap_sp = average_precision_score(gt_sp, pr_sp)
+            metric_results[metric] = ap_sp
+        elif metric.startswith('I-F1_max'):
+            best_f1_score_sp = f1_score_max(gt_sp, pr_sp)
+            metric_results[metric] = best_f1_score_sp
+        elif metric.startswith('P-AUROC'):
+            metric_results[metric] = metrics['p_auroc']
+        elif metric.startswith('P-AP'):
+            metric_results[metric] = metrics['p_aupr']
+        elif metric.startswith('P-F1_max'):
+            best_f1_score_px = f1_score_max(gt_px.ravel(), pr_px.ravel())
+            metric_results[metric] = best_f1_score_px
+        elif metric.startswith('AUPRO'):
+            metric_results[metric] = metrics['p_aupro']
+    return list(metric_results.values())
 
 
 def compute_best_pr_re(anomaly_ground_truth_labels, anomaly_prediction_weights):

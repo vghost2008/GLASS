@@ -12,6 +12,10 @@ import glass
 import utils
 import numpy as np
 import time
+from wml.wtorch.data import DataLoader as torchDataLoader
+
+DataLoader = torch.utils.data.DataLoader
+#DataLoader = torchDataLoader
 
 
 @click.group(chain=True)
@@ -119,9 +123,9 @@ def net(
 
 
 @main.command("dataset")
-@click.argument("name", type=str)
-@click.argument("data_path", type=click.Path(exists=True, file_okay=False))
-@click.argument("aug_path", type=click.Path(exists=True, file_okay=False))
+@click.option("--name", type=str,default="mvtec2")
+@click.option("--data_path", type=click.Path(exists=True, file_okay=False),default='/home/wj/ai/mldata1/MVTEC/datasets')
+@click.option("--aug_path", type=click.Path(exists=True, file_okay=False),default='/home/wj/ai/mldata1/MVTEC/other_datasets/dtd')
 @click.option("--subdatasets", "-d", multiple=True, type=str, required=True)
 @click.option("--batch_size", default=5, type=int, show_default=True)
 @click.option("--num_workers", default=8, type=int, show_default=True)
@@ -187,7 +191,7 @@ def dataset(
                 seed=seed,
             )
 
-            test_dataloader = torch.utils.data.DataLoader(
+            test_dataloader = DataLoader(
                 test_dataset,
                 batch_size=batch_size,
                 shuffle=False,
@@ -197,6 +201,27 @@ def dataset(
             )
 
             test_dataloader.name = get_name + "_" + subdataset
+
+            predict_dataset = dataset_library.__dict__[dataset_info[1]](
+                data_path,
+                aug_path,
+                classname=subdataset,
+                resize=resize,
+                imagesize=imagesize,
+                split=dataset_library.DatasetSplit.PREDICT,
+                seed=seed,
+            )
+
+            predict_dataloader = DataLoader(
+                predict_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=num_workers,
+                prefetch_factor=2,
+                pin_memory=True,
+            )
+
+            predict_dataloader.name = get_name + "_" + subdataset
 
             if test == 'ckpt':
                 train_dataset = dataset_library.__dict__[dataset_info[1]](
@@ -227,7 +252,7 @@ def dataset(
                     batch_size=batch_size,
                 )
 
-                train_dataloader = torch.utils.data.DataLoader(
+                train_dataloader = DataLoader(
                     train_dataset,
                     batch_size=batch_size,
                     shuffle=True,
@@ -238,13 +263,54 @@ def dataset(
 
                 train_dataloader.name = test_dataloader.name
                 print(f"Dataset {subdataset.upper():^20}: train={len(train_dataset)} test={len(test_dataset)}")
+
+                base_train_dataset = dataset_library.__dict__[dataset_info[1]](
+                    data_path,
+                    aug_path,
+                    dataset_name=get_name,
+                    classname=subdataset,
+                    resize=resize,
+                    imagesize=imagesize,
+                    split=dataset_library.DatasetSplit.BASE_TRAIN,
+                    seed=seed,
+                    rotate_degrees=rotate_degrees,
+                    translate=translate,
+                    brightness_factor=brightness,
+                    contrast_factor=contrast,
+                    saturation_factor=saturation,
+                    gray_p=gray,
+                    h_flip_p=hflip,
+                    v_flip_p=vflip,
+                    scale=scale,
+                    distribution=distribution,
+                    mean=mean,
+                    std=std,
+                    fg=fg,
+                    rand_aug=rand_aug,
+                    downsampling=downsampling,
+                    augment=augment,
+                    batch_size=batch_size*2,
+                )
+
+                base_train_dataloader = DataLoader(
+                    base_train_dataset,
+                    batch_size=batch_size*2,
+                    shuffle=True,
+                    num_workers=num_workers,
+                    prefetch_factor=2,
+                    pin_memory=True,
+                )
+
+                base_train_dataloader.name = test_dataloader.name
             else:
                 train_dataloader = test_dataloader
                 print(f"Dataset {subdataset.upper():^20}: train={0} test={len(test_dataset)}")
 
             dataloader_dict = {
                 "training": train_dataloader,
+                "base_training": base_train_dataloader,
                 "testing": test_dataloader,
+                "predict": predict_dataloader,
             }
             dataloaders.append(dataloader_dict)
 
