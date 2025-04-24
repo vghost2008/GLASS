@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from adeval import  EvalAccumulatorCuda
 import torch
+from itertools import groupby
 
 def f1_score_max(y_true, y_score):
     precs, recs, thrs = precision_recall_curve(y_true, y_score)
@@ -15,6 +16,8 @@ def f1_score_max(y_true, y_score):
     f1s = f1s[:-1]
     return f1s.max()
 
+def get_sample_id(path):
+    return int(path.split(".")[0])
 
 def ader_evaluator(pr_px, pr_sp, gt_px, gt_sp, use_metrics = ['I-AUROC', 'I-AP', 'I-F1_max','P-AUROC', 'P-AP', 'P-F1_max', 'AUPRO']):
     if len(gt_px.shape) == 4:
@@ -22,8 +25,8 @@ def ader_evaluator(pr_px, pr_sp, gt_px, gt_sp, use_metrics = ['I-AUROC', 'I-AP',
     if len(pr_px.shape) == 4:
         pr_px = pr_px.squeeze(1)
         
-    score_min = min(pr_sp)
-    score_max = max(pr_sp)
+    score_min = min(min(pr_sp),min(gt_sp))
+    score_max = max(max(pr_sp),max(gt_sp))
     anomap_min = pr_px.min()
     anomap_max = pr_px.max()
     
@@ -31,8 +34,7 @@ def ader_evaluator(pr_px, pr_sp, gt_px, gt_sp, use_metrics = ['I-AUROC', 'I-AP',
     accum.add_anomap_batch(torch.tensor(pr_px).cuda(non_blocking=True),
                            torch.tensor(gt_px.astype(np.uint8)).cuda(non_blocking=True))
     
-    # for i in range(torch.tensor(pr_px).size(0)):
-    #     accum.add_image(torch.tensor(pr_sp[i]), torch.tensor(gt_sp[i]))
+    accum.add_image(torch.tensor(pr_sp), torch.tensor(gt_sp))
     
     metrics = accum.summary()
     metric_results = {}

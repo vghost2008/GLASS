@@ -752,7 +752,10 @@ class GLASS(torch.nn.Module):
             with wmlu.TimeThis("_eval"):
                 image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
                                                                                      labels_gt, masks_gt, name, path='eval',img_paths=img_paths)
-            epoch = int(ckpt_path.split('_')[-1].split('.')[0])
+            try:
+                epoch = int(ckpt_path.split('_')[-1].split('.')[0])
+            except:
+                epoch = 0
         else:
             image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch = 0., 0., 0., 0., 0., -1.
             LOGGER.info("No ckpt file found!")
@@ -790,8 +793,7 @@ class GLASS(torch.nn.Module):
         else:
             return None
 
-
-    def _evaluate(self, images, scores, segmentations, labels_gt, masks_gt, name, path='training',img_paths=None):
+    def _evaluate(self, images, scores, segmentations, labels_gt, masks_gt, name, path='training',img_paths=None,vis_results=False):
         scores = np.squeeze(np.array(scores))
         image_scores = metrics.compute_imagewise_retrieval_metrics(scores, labels_gt, path)
         image_auroc = image_scores["auroc"]
@@ -821,28 +823,86 @@ class GLASS(torch.nn.Module):
             pixel_pro = -1.
             return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro
 
-        defects = np.array(images)
-        targets = np.array(masks_gt)
-        for i in range(len(defects)):
-            defect = utils.torch_format_2_numpy_img(defects[i])
-            target = utils.torch_format_2_numpy_img(targets[i])
+        if vis_results:
+            defects = np.array(images)
+            targets = np.array(masks_gt)
+            for i in range(len(defects)):
+                defect = utils.torch_format_2_numpy_img(defects[i])
+                target = utils.torch_format_2_numpy_img(targets[i])
+    
+                mask = cv2.cvtColor(cv2.resize(segmentations[i], (defect.shape[1], defect.shape[0])),
+                                    cv2.COLOR_GRAY2BGR)
+                mask = (mask * 255).astype('uint8')
+                mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
+    
+                img_up = np.hstack([defect, target, mask])
+                #img_up = cv2.resize(img_up, (256 * 3, 256))
+                full_path = osp.join(self.run_save_path, path , name)
+                if img_paths is not None and len(img_paths) == len(defects):
+                    save_name = osp.basename(img_paths[i])
+                    full_path = osp.join(full_path,wmlu.base_name(osp.dirname(img_paths[i])))
+                else:
+                    save_name = str(i + 1).zfill(3) + '.png'
+                utils.del_remake_dir(full_path, del_flag=False)
+    
+                cv2.imwrite(osp.join(full_path , save_name), img_up)
 
-            mask = cv2.cvtColor(cv2.resize(segmentations[i], (defect.shape[1], defect.shape[0])),
-                                cv2.COLOR_GRAY2BGR)
-            mask = (mask * 255).astype('uint8')
-            mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
+        print(f"Eval save path: {osp.join(self.run_save_path, path)}")
 
-            img_up = np.hstack([defect, target, mask])
-            #img_up = cv2.resize(img_up, (256 * 3, 256))
-            full_path = osp.join(self.run_save_path, path , name)
-            if img_paths is not None and len(img_paths) == len(defects):
-                save_name = osp.basename(img_paths[i])
-                full_path = osp.join(full_path,wmlu.base_name(osp.dirname(img_paths[i])))
+        return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro
+
+    def _fast_evaluate(self, images, scores, segmentations, labels_gt, masks_gt, name, path='training',img_paths=None,vis_results=False):
+        scores = np.squeeze(np.array(scores))
+        image_auroc = 0
+        image_ap = 0
+
+        if len(masks_gt) > 0:
+            eval_segmentations = npresize_mask_mt(segmentations,scale_factor=0.25)
+            eval_masks_gt = [np.squeeze(v,axis=0) for v in masks_gt]
+            eval_masks_gt = npresize_mask_mt(eval_masks_gt,scale_factor=0.25)
+            best_threshold, best_precision, best_recall, best_f1 = metrics.compute_best_pr_re(eval_masks_gt,eval_segmentations)
+            self.prf = best_threshold, best_precision, best_recall, best_f1
+            results = metrics.ader_evaluator(pr_px=eval_segmentations, pr_sp=scores, gt_px=eval_masks_gt, gt_sp=labels_gt)
+            pixel_auroc = results["P-AUROC"]
+            pixel_ap = results["P-AP"]
+            image_auroc= results["I-AUROC"]
+            image_ap = results["I-AP"]
+            if path == 'eval':
+                try:
+                    pixel_pro = metrics.compute_pro(np.squeeze(np.array(eval_masks_gt)), eval_segmentations)
+                except:
+                    pixel_pro = 0.
             else:
-                save_name = str(i + 1).zfill(3) + '.png'
-            utils.del_remake_dir(full_path, del_flag=False)
+                pixel_pro = 0.
+        else:
+            pixel_auroc = -1.
+            pixel_ap = -1.
+            pixel_pro = -1.
+            return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro
 
-            cv2.imwrite(osp.join(full_path , save_name), img_up)
+        if vis_results:
+            defects = np.array(images)
+            targets = np.array(masks_gt)
+            for i in range(len(defects)):
+                defect = utils.torch_format_2_numpy_img(defects[i])
+                target = utils.torch_format_2_numpy_img(targets[i])
+    
+                mask = cv2.cvtColor(cv2.resize(segmentations[i], (defect.shape[1], defect.shape[0])),
+                                    cv2.COLOR_GRAY2BGR)
+                mask = (mask * 255).astype('uint8')
+                mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
+    
+                img_up = np.hstack([defect, target, mask])
+                #img_up = cv2.resize(img_up, (256 * 3, 256))
+                full_path = osp.join(self.run_save_path, path , name)
+                if img_paths is not None and len(img_paths) == len(defects):
+                    save_name = osp.basename(img_paths[i])
+                    full_path = osp.join(full_path,wmlu.base_name(osp.dirname(img_paths[i])))
+                else:
+                    save_name = str(i + 1).zfill(3) + '.png'
+                utils.del_remake_dir(full_path, del_flag=False)
+    
+                cv2.imwrite(osp.join(full_path , save_name), img_up)
 
         print(f"Eval save path: {full_path}")
 
