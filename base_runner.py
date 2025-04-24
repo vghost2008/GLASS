@@ -191,6 +191,7 @@ def dataset(
     print(f"subdatasets {subdatasets}")
 
     def get_dataloaders(seed, test, get_name=name):
+        pin_memory = True
         dataloaders = []
         for subdataset in subdatasets:
             test_dataset = dataset_library.__dict__[dataset_info[1]](
@@ -209,7 +210,7 @@ def dataset(
                 shuffle=False,
                 num_workers=num_workers,
                 prefetch_factor=2,
-                pin_memory=True,
+                pin_memory=pin_memory,
             )
 
             test_dataloader.name = get_name + "_" + subdataset
@@ -230,7 +231,7 @@ def dataset(
                 shuffle=False,
                 num_workers=num_workers,
                 prefetch_factor=2,
-                pin_memory=True,
+                pin_memory=pin_memory,
             )
 
             predict_dataloader.name = get_name + "_" + subdataset
@@ -270,7 +271,7 @@ def dataset(
                     shuffle=True,
                     num_workers=num_workers,
                     prefetch_factor=2,
-                    pin_memory=True,
+                    pin_memory=pin_memory,
                 )
 
                 train_dataloader.name = test_dataloader.name
@@ -301,16 +302,16 @@ def dataset(
                     rand_aug=rand_aug,
                     downsampling=downsampling,
                     augment=augment,
-                    batch_size=batch_size*2,
+                    batch_size=batch_size,
                 )
 
                 base_train_dataloader = DataLoader(
                     base_train_dataset,
-                    batch_size=batch_size*2,
+                    batch_size=batch_size,
                     shuffle=True,
                     num_workers=num_workers,
                     prefetch_factor=2,
-                    pin_memory=True,
+                    pin_memory=pin_memory,
                 )
 
                 base_train_dataloader.name = test_dataloader.name

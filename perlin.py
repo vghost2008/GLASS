@@ -21,7 +21,7 @@ def perlin_mask(img_shape, feat_size, min, max, mask_fg, flag=0):
     if not isinstance(feat_size,Iterable):
         feat_size = (feat_size,feat_size)
     mask = np.zeros(feat_size)
-    max_try_nr = 20
+    max_try_nr = 10
     while np.max(mask) == 0 and max_try_nr>0:
         perlin_thr_1 = generate_thr(img_shape, min, max)
         perlin_thr_2 = generate_thr(img_shape, min, max)
