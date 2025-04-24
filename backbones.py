@@ -9,7 +9,7 @@ import numpy as np
 from torchvision.models.detection import maskrcnn_resnet50_fpn_v2, MaskRCNN_ResNet50_FPN_V2_Weights
 from torchvision.utils import draw_bounding_boxes,draw_segmentation_masks
 from torchvision.transforms.functional import to_pil_image
-from .models.vit_encoder import load
+from models.vit_encoder import load as dino_load
 
 _BACKBONES = {
     "alexnet": "models.alexnet(pretrained=True)",
@@ -66,7 +66,7 @@ def create_maskrcnn():
     return model
 
 def create_dino():
-    encoder = load("dinov2reg_vit_base_14")
+    encoder = dino_load("dinov2reg_vit_base_14")
     embed_dim, num_heads = 768, 12
     return encoder
 

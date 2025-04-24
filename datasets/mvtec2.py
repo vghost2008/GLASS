@@ -80,6 +80,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
             downsampling=8,
             scale=0,
             batch_size=8,
+            align_v=32,
             **kwargs,
     ):
         """
@@ -113,7 +114,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         #self.resize = resize if self.distribution != 1 else [resize, resize]
         s = size_dict[classname]
         down_stride = math.ceil(math.sqrt(s[0]*s[1])/768)
-        self.resize = [align(s[1]//down_stride,32),align(s[0]//down_stride,32)]
+        self.resize = [align(s[1]//down_stride,align_v),align(s[0]//down_stride,align_v)]
         print(f"Use resize {self.resize} for {classname}, downsample stride {down_stride}")
         self.imgsize = imagesize
         self.imagesize = (3, self.imgsize, self.imgsize)

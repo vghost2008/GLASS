@@ -180,13 +180,15 @@ def dataset(
 
     all_names = ["can"  , "fabric"  , "fruit_jelly"  , "rice"  , "sheet_metal"  , "vial"  , "wallplugs"  , "walnuts"]
 
+    subdatasets = list(subdatasets)
     print(f"subdatasets {subdatasets}")
     for i,v in enumerate(list(subdatasets)):
         try:
             if len(v)<=2:
                 idx = int(v)
                 subdatasets[i] = all_names[idx]
-        except:
+        except Exception as e:
+            print(e)
             pass
     print(f"subdatasets {subdatasets}")
 
