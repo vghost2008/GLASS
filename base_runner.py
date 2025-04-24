@@ -178,6 +178,18 @@ def dataset(
     dataset_info = _DATASETS[name]
     dataset_library = __import__(dataset_info[0], fromlist=[dataset_info[1]])
 
+    all_names = ["can"  , "fabric"  , "fruit_jelly"  , "rice"  , "sheet_metal"  , "vial"  , "wallplugs"  , "walnuts"]
+
+    print(f"subdatasets {subdatasets}")
+    for i,v in enumerate(list(subdatasets)):
+        try:
+            if len(v)<=2:
+                idx = int(v)
+                subdatasets[i] = all_names[idx]
+        except:
+            pass
+    print(f"subdatasets {subdatasets}")
+
     def get_dataloaders(seed, test, get_name=name):
         dataloaders = []
         for subdataset in subdatasets:
