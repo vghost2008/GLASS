@@ -365,7 +365,7 @@ class GLASS(torch.nn.Module):
                                 f" PAUC:{round(pixel_auroc * 100, 2)}({round(best_record[2] * 100, 2)})" \
                                 f" F1:{round(best_f1* 100, 2)}({round(best_record[4] * 100, 2)})" \
                                 f" Precision:{round(best_precision* 100, 2)}({round(best_record[1] * 100, 2)})" \
-                                f" Recall:{round(best_recall* 100, 2)}({round(best_record[2] * 100, 2)})" \
+                                f" Recall:{round(best_recall* 100, 2)}({round(best_record[3] * 100, 2)})" \
                                 f" E:{i_epoch}({best_record[-1]})"
                     pbar_str += pbar_str1
                     pbar.set_description_str(pbar_str)
