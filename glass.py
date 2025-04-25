@@ -405,6 +405,8 @@ class GLASS(torch.nn.Module):
             self.dsc_opt.zero_grad()
             if self.pre_proj > 0:
                 self.proj_opt.zero_grad()
+            if self.train_backbone:
+                self.backbone_opt.zero_grad()
 
             aug = data_item["aug"]
             aug = aug.to(torch.float).to(self.device)
@@ -565,6 +567,8 @@ class GLASS(torch.nn.Module):
             self.dsc_opt.zero_grad()
             if self.pre_proj > 0:
                 self.proj_opt.zero_grad()
+            if self.train_backbone:
+                self.backbone_opt.zero_grad()
 
             aug = data_item["aug"]
             aug = aug.to(torch.float).to(self.device)
