@@ -1,4 +1,5 @@
 import torchvision.models as models
+import math
 import timm
 import timm
 from torchvision import transforms
@@ -6,6 +7,7 @@ from PIL import Image
 import torch
 import os
 import numpy as np
+import torch.nn as nn
 from torchvision.models.detection import maskrcnn_resnet50_fpn_v2, MaskRCNN_ResNet50_FPN_V2_Weights
 from torchvision.utils import draw_bounding_boxes,draw_segmentation_masks
 from torchvision.transforms.functional import to_pil_image
@@ -65,10 +67,55 @@ def create_maskrcnn():
     model = model.eval()
     return model
 
+class DINOBackbone(nn.Module):
+    def __init__(
+            self,
+            target_layers =[2, 3, 4, 5, 6, 7, 8, 9],
+            remove_class_token=True,
+            encoder_require_grad_layer=[],
+    ) -> None:
+        super().__init__()
+        self.encoder = dino_load("dinov2reg_vit_base_14")
+        self.target_layers = target_layers #[2, 3, 4, 5, 6, 7, 8, 9]
+        self.remove_class_token = remove_class_token
+        self.encoder_require_grad_layer = encoder_require_grad_layer #[]
+        self.aggregator = "NetworkFeatureAggregatorV3"
+
+        if not hasattr(self.encoder, 'num_register_tokens'): #4
+            self.encoder.num_register_tokens = 0
+
+    def forward(self, x):
+        _,_,IH,IW = x.shape
+        x = self.encoder.prepare_tokens(x)
+        B, L, _ = x.shape #[16,789,768],[B,L,C]
+        en_list = []
+        for i, blk in enumerate(self.encoder.blocks):
+            if i <= self.target_layers[-1]:
+                if i in self.encoder_require_grad_layer:
+                    x = blk(x)
+                else:
+                    with torch.no_grad():
+                        x = blk(x)
+            else:
+                continue
+            if i in self.target_layers:
+                en_list.append(x)
+
+        if self.remove_class_token: # True
+            en_list = [e[:, 1 + self.encoder.num_register_tokens:, :] for e in en_list] #self.encoder.num_register_tokens==4
+        
+        res = {}
+        B,_,C = en_list[0].shape
+
+        for i,v in enumerate(en_list):
+            v = torch.reshape(v,[B,IH//14,IW//14,C])
+            v = torch.permute(v,[0,3,1,2])
+            res[str(i)] = v
+        
+        return res
+
 def create_dino():
-    encoder = dino_load("dinov2reg_vit_base_14")
-    embed_dim, num_heads = 768, 12
-    return encoder
+    return DINOBackbone()
 
 def load(name):
     backbone = eval(_BACKBONES[name])
@@ -80,7 +127,7 @@ def load(name):
         backbone.out_info = [['0','1','2','3'],[256,256,256,256]]
         backbone.out_dict = ['0','1','2','3']
     elif name == "dino":
-        backbone.out_info = [['0','1','2','3'],[256,256,256,256]]
-        backbone.out_dict = ['0','1','2','3']
+        backbone.out_info = [['0','1','2','3','4','5','6','7'],[768]*8]
+        backbone.out_dict = ['0','1','2','3','4','5','6','7']
     
     return backbone

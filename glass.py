@@ -25,6 +25,7 @@ import wml.wtorch.summary as wsummary
 import wml.wtorch.utils as wtu
 import wml.wtorch.train_toolkit as wtt
 import wml.img_utils as wmli
+import colorama
 import time
 from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
 
@@ -97,9 +98,14 @@ class GLASS(torch.nn.Module):
         self.input_shape = input_shape
         self.device = device
 
-        feature_aggregator = common.NetworkFeatureAggregatorV2(
-            self.backbone, self.layers_to_extract_from, self.device, train_backbone
-        ).to(device)
+        if hasattr(self.backbone,"aggregator") and self.backbone.aggregator == "NetworkFeatureAggregatorV3":
+            feature_aggregator = common.NetworkFeatureAggregatorV3(
+                self.backbone, self.layers_to_extract_from, self.device, train_backbone
+            ).to(device)
+        else:
+            feature_aggregator = common.NetworkFeatureAggregatorV2(
+                self.backbone, self.layers_to_extract_from, self.device, train_backbone
+            ).to(device)
         self.forward_modules = feature_aggregator
 
         self.target_embed_dimension = target_embed_dimension
@@ -206,6 +212,8 @@ class GLASS(torch.nn.Module):
             return 0., 0., 0., 0., 0., -1.
         '''
 
+        ckpt_path_best = ""
+
         def update_state_dict():
             state_dict["discriminator"] = OrderedDict({
                 k: v.detach().cpu()
@@ -269,108 +277,122 @@ class GLASS(torch.nn.Module):
         pbar_str1 = ""
         best_record = None
         error_nr = 0
+        min_error_nr = 0
         for i_epoch in pbar:
-            self.forward_modules.eval()
-            with torch.cuda.amp.autocast():
-                with torch.no_grad():  # compute center
-                    print(f"Get center {i_epoch} ...")
-                    gct0 = time.time()
-                    sys.stdout.flush()
-                    for i, data in enumerate(base_training_data):
-                        img = data["image"]
-                        img = img.to(torch.float).to(self.device)
-                        if self.pre_proj > 0: #True
-                            outputs = self.pre_projection(self._embed(img, evaluation=False)[0])
-                            outputs = outputs[0] if len(outputs) == 2 else outputs
-                        else:
-                            outputs = self._embed(img, evaluation=False)[0]
-                        outputs = outputs[0] if len(outputs) == 2 else outputs
-                        outputs = outputs.reshape(img.shape[0], -1, outputs.shape[-1])
-    
-                        batch_mean = torch.mean(outputs, dim=0)
-                        if i == 0:
-                            self.c = batch_mean
-                        else:
-                            self.c += batch_mean
-                    self.c /= len(base_training_data)
-                    print(f"Get center finish, time cost {time.time()-gct0:.3f}s.")
-                    sys.stdout.flush()
-
             try:
+                self.forward_modules.eval()
+                with torch.cuda.amp.autocast():
+                    with torch.no_grad():  # compute center
+                        print(f"Get center {i_epoch} ...")
+                        gct0 = time.time()
+                        sys.stdout.flush()
+                        for i, data in enumerate(base_training_data):
+                            img = data["image"]
+                            img = img.to(torch.float).to(self.device)
+                            if self.pre_proj > 0: #True
+                                outputs = self.pre_projection(self._embed(img, evaluation=False)[0])
+                                outputs = outputs[0] if len(outputs) == 2 else outputs
+                            else:
+                                outputs = self._embed(img, evaluation=False)[0]
+                            outputs = outputs[0] if len(outputs) == 2 else outputs
+                            outputs = outputs.reshape(img.shape[0], -1, outputs.shape[-1])
+        
+                            batch_mean = torch.mean(outputs, dim=0)
+                            if i == 0:
+                                self.c = batch_mean
+                            else:
+                                self.c += batch_mean
+                        self.c /= len(base_training_data)
+                        print(f"Get center finish, time cost {time.time()-gct0:.3f}s.")
+                        sys.stdout.flush()
+    
                 pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
+    
+                update_state_dict()
+    
+                ckpt_path_cur = os.path.join(self.ckpt_dir, "cur_ckpt.pth".format(i_epoch))
+                try:
+                    if i_epoch%2 == 0:
+                        if osp.exists(ckpt_path_cur):
+                            os.remove(ckpt_path_cur)
+                        torch.save(state_dict, ckpt_path_cur)
+                except Exception as e:
+                    print(f"ERROR: {e}")
+    
+                if (i_epoch + self.eval_offset) % self.eval_epochs == 0:
+                    print(f"Begin eval...")
+                    sys.stdout.flush()
+                    t0 = time.time()
+                    images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
+                    image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
+                                                                                             labels_gt, masks_gt, name,img_paths=img_paths)
+    
+                    best_threshold, best_precision, best_recall, best_f1 = self.prf
+                    self.logger.logger.add_scalar("i-auroc", image_auroc, i_epoch)
+                    self.logger.logger.add_scalar("Recall", best_recall, i_epoch)
+                    self.logger.logger.add_scalar("p-auroc", pixel_auroc, i_epoch)
+                    self.logger.logger.add_scalar("Precision", best_precision, i_epoch)
+                    self.logger.logger.add_scalar("F1", best_f1, i_epoch)
+    
+    
+                    eval_path = osp.join(self.run_save_path,'eval' , name)
+                    train_path = osp.join(self.run_save_path,'training' , name)
+                    cur_score = (best_f1+pixel_auroc)/2
+                    if best_record is not None:
+                        best_score = (best_record[2]+best_record[4])/2
+                        print(f"Best score {best_score}, current score {cur_score}")
+                    if best_record is None:
+                        best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
+                        ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
+                        torch.save(state_dict, ckpt_path_best)
+                        shutil.rmtree(eval_path, ignore_errors=True)
+                        if osp.exists(train_path):
+                            shutil.copytree(train_path, eval_path)
+                        
+    
+
+                    elif cur_score>best_score:
+                        best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
+                        os.remove(ckpt_path_best)
+                        ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
+                        torch.save(state_dict, ckpt_path_best)
+                        shutil.rmtree(eval_path, ignore_errors=True)
+                        if osp.exists(train_path):
+                            shutil.copytree(train_path, eval_path)
+                        try:
+                            ckpt_path_best = osp.abspath(ckpt_path_best)
+                            sym_path = wmlu.change_name(ckpt_path_best,basename="ckpt_best")
+                            wmlu.symlink(ckpt_path_best,sym_path)
+                        except:
+                            pass
+    
+                    pbar_str1 = f" IAUC:{round(image_auroc * 100, 2)}({round(best_record[0] * 100, 2)})" \
+                                f" PAUC:{round(pixel_auroc * 100, 2)}({round(best_record[2] * 100, 2)})" \
+                                f" F1:{round(best_f1* 100, 2)}({round(best_record[4] * 100, 2)})" \
+                                f" Precision:{round(best_precision* 100, 2)}({round(best_record[1] * 100, 2)})" \
+                                f" Recall:{round(best_recall* 100, 2)}({round(best_record[3] * 100, 2)})" \
+                                f" E:{i_epoch}({best_record[-1]})"
+                    pbar_str += pbar_str1
+                    pbar.set_description_str(pbar_str)
+                    print(f"Eval finish, time cost {time.time()-t0:.3f}s")
+                    sys.stdout.flush()
+    
+                torch.save(state_dict, ckpt_path_save)
+                min_error_nr = 0
+
             except Exception as e:
                 torch.cuda.empty_cache()
-                print(f"\nERROR: {e}\n")
                 error_nr += 1
-                if error_nr>100:
-                    exit(-1)
-                else:
-                    continue
-
-            update_state_dict()
-
-            ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt.pth".format(i_epoch))
-            try:
-                if osp.exists(ckpt_path_best):
-                    os.remove(ckpt_path_best)
-                torch.save(state_dict, ckpt_path_best)
-            except Exception as e:
-                print(f"ERROR: {e}")
-
-            if (i_epoch + self.eval_offset) % self.eval_epochs == 0:
-                print(f"Begin eval...")
-                sys.stdout.flush()
-                t0 = time.time()
-                images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
-                image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
-                                                                                         labels_gt, masks_gt, name,img_paths=img_paths)
-
-                best_threshold, best_precision, best_recall, best_f1 = self.prf
-                self.logger.logger.add_scalar("i-auroc", image_auroc, i_epoch)
-                self.logger.logger.add_scalar("Recall", best_recall, i_epoch)
-                self.logger.logger.add_scalar("p-auroc", pixel_auroc, i_epoch)
-                self.logger.logger.add_scalar("Precision", best_precision, i_epoch)
-                self.logger.logger.add_scalar("F1", best_f1, i_epoch)
-
-
-                eval_path = osp.join(self.run_save_path,'eval' , name)
-                train_path = osp.join(self.run_save_path,'training' , name)
-                if best_record is None:
-                    best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
-                    ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
-                    torch.save(state_dict, ckpt_path_best)
-                    shutil.rmtree(eval_path, ignore_errors=True)
-                    if osp.exists(train_path):
-                        shutil.copytree(train_path, eval_path)
-                    
-
-                elif image_auroc + pixel_auroc > best_record[0] + best_record[2]:
-                    best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
-                    os.remove(ckpt_path_best)
-                    ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
-                    torch.save(state_dict, ckpt_path_best)
-                    shutil.rmtree(eval_path, ignore_errors=True)
-                    if osp.exists(train_path):
-                        shutil.copytree(train_path, eval_path)
+                min_error_nr += 1
+                if min_error_nr>= 5 and osp.exists(ckpt_path_best):
                     try:
-                        ckpt_path_best = osp.abspath(ckpt_path_best)
-                        sym_path = wmlu.change_name(ckpt_path_best,basename="ckpt_best")
-                        wmlu.symlink(ckpt_path_best,sym_path)
-                    except:
+                        print(f"Too many errors, reload ckpt {ckpt_path_best}")
+                        self.load_ckpt(ckpt_path_best)
+                        print(f"Load {ckpt_path_best} success.")
+                        min_error_nr = 0
+                    except Exception as e:
                         pass
-
-                pbar_str1 = f" IAUC:{round(image_auroc * 100, 2)}({round(best_record[0] * 100, 2)})" \
-                            f" PAUC:{round(pixel_auroc * 100, 2)}({round(best_record[2] * 100, 2)})" \
-                            f" F1:{round(best_f1* 100, 2)}({round(best_record[4] * 100, 2)})" \
-                            f" Precision:{round(best_precision* 100, 2)}({round(best_record[1] * 100, 2)})" \
-                            f" Recall:{round(best_recall* 100, 2)}({round(best_record[2] * 100, 2)})" \
-                            f" E:{i_epoch}({best_record[-1]})"
-                pbar_str += pbar_str1
-                pbar.set_description_str(pbar_str)
-                print(f"Eval finish, time cost {time.time()-t0:.3f}s")
-                sys.stdout.flush()
-
-            torch.save(state_dict, ckpt_path_save)
+                print(colorama.Fore.RED+f"ERROR:{e}"+colorama.Style.RESET_ALL)
         return best_record
 
     def _train_discriminator(self, input_data, cur_epoch, pbar, pbar_str1):
@@ -388,6 +410,8 @@ class GLASS(torch.nn.Module):
             self.dsc_opt.zero_grad()
             if self.pre_proj > 0:
                 self.proj_opt.zero_grad()
+            if self.train_backbone:
+                self.backbone_opt.zero_grad()
 
             aug = data_item["aug"]
             aug = aug.to(torch.float).to(self.device)
@@ -543,10 +567,13 @@ class GLASS(torch.nn.Module):
 
         all_loss, all_p_true, all_p_fake, all_r_t, all_r_g, all_r_f = [], [], [], [], [], []
         sample_num = 0
+        tda_error_nr = 0
         for i_iter, data_item in enumerate(input_data):
             self.dsc_opt.zero_grad()
             if self.pre_proj > 0:
                 self.proj_opt.zero_grad()
+            if self.train_backbone:
+                self.backbone_opt.zero_grad()
 
             aug = data_item["aug"]
             aug = aug.to(torch.float).to(self.device)
@@ -662,7 +689,10 @@ class GLASS(torch.nn.Module):
                 model_loss = list(filter(torch.isfinite,model_loss))
                 if len(model_loss) == 0:
                     print(info)
-                    return "",0,0
+                    tda_error_nr += 1
+                    if tda_error_nr >= 5:
+                        raise RuntimeError(f"Too many NaN loss error.")
+                        return None,0,0
                 if len(model_loss)!=3:
                     print(info)
 
@@ -739,6 +769,8 @@ class GLASS(torch.nn.Module):
             pbar_str += pbar_str1
             pbar.set_description_str(pbar_str)
 
+            tda_error_nr = 0
+
             if sample_num > self.limit:
                 break
 
@@ -767,7 +799,7 @@ class GLASS(torch.nn.Module):
         utils.update_threshold_file(self.run_save_path,test_data.dataset.classname,best_threshold)
 
 
-        return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch
+        return best_precision, best_recall,best_f1, pixel_auroc, pixel_ap, pixel_pro, epoch
     
     def load_ckpt(self,ckpt_path=None):
         if ckpt_path is None:
@@ -804,8 +836,6 @@ class GLASS(torch.nn.Module):
             eval_segmentations = npresize_mask(segmentations,scale_factor=0.25)
             eval_masks_gt = [np.squeeze(v,axis=0) for v in masks_gt]
             eval_masks_gt = npresize_mask(eval_masks_gt,scale_factor=0.25)
-            #eval_masks_gt = masks_gt
-            #eval_segmentations = np.array(segmentations)
             best_threshold, best_precision, best_recall, best_f1 = metrics.compute_best_pr_re(eval_masks_gt,eval_segmentations)
             self.prf = best_threshold, best_precision, best_recall, best_f1
             pixel_scores = metrics.compute_pixelwise_retrieval_metrics(eval_segmentations, eval_masks_gt, path)

@@ -13,7 +13,15 @@ import utils
 import numpy as np
 import time
 from wml.wtorch.data import DataLoader as torchDataLoader
-
+#[(0, 'can'), (1, 'fabric'), (2, 'fruit_jelly'), (3, 'rice'), (4, 'sheet_metal'), (5, 'vial'), (6, 'wallplugs'), (7, 'walnuts')]
+#classname walnuts, split DatasetSplit.TRAIN, len 480, 7
+#classname can, split DatasetSplit.TRAIN, len 458, 0
+#classname fabric, split DatasetSplit.TRAIN, len 430, 1
+#classname rice, split DatasetSplit.TRAIN, len 348, 3
+#classname vial, split DatasetSplit.TRAIN, len 332, 5
+#classname wallplugs, split DatasetSplit.TRAIN, len 326, 6
+#classname fruit_jelly, split DatasetSplit.TRAIN, len 300, 2
+#classname sheet_metal, split DatasetSplit.TRAIN, len 156, 4
 DataLoader = torch.utils.data.DataLoader
 #DataLoader = torchDataLoader
 
@@ -147,6 +155,7 @@ def net(
 @click.option("--rand_aug", default=1, type=int)
 @click.option("--downsampling", default=4, type=int)
 @click.option("--augment", is_flag=True)
+@click.option("--align", default=32, type=int)
 def dataset(
         name,
         data_path,
@@ -172,6 +181,7 @@ def dataset(
         rand_aug,
         downsampling,
         augment,
+        align,
 ):
     _DATASETS = {"mvtec": ["datasets.mvtec", "MVTecDataset"], "visa": ["datasets.visa", "VisADataset"],"mvtec2": ["datasets.mvtec2", "MVTecDataset2"],
                  "mpdd": ["datasets.mvtec", "MVTecDataset"], "wfdd": ["datasets.mvtec", "MVTecDataset"], }
@@ -182,6 +192,7 @@ def dataset(
 
     subdatasets = list(subdatasets)
     print(f"subdatasets {subdatasets}")
+    subdatasets = list(subdatasets)
     for i,v in enumerate(list(subdatasets)):
         try:
             if len(v)<=2:
@@ -204,6 +215,7 @@ def dataset(
                 imagesize=imagesize,
                 split=dataset_library.DatasetSplit.TEST,
                 seed=seed,
+                align_v=align,
             )
 
             test_dataloader = DataLoader(
@@ -225,6 +237,7 @@ def dataset(
                 imagesize=imagesize,
                 split=dataset_library.DatasetSplit.PREDICT,
                 seed=seed,
+                align_v=align,
             )
 
             predict_dataloader = DataLoader(
@@ -265,6 +278,7 @@ def dataset(
                     downsampling=downsampling,
                     augment=augment,
                     batch_size=batch_size,
+                    align_v=align,
                 )
 
                 train_dataloader = DataLoader(
@@ -305,6 +319,7 @@ def dataset(
                     downsampling=downsampling,
                     augment=augment,
                     batch_size=batch_size,
+                    align_v=align,
                 )
 
                 base_train_dataloader = DataLoader(

@@ -4,6 +4,8 @@ import torch
 import math
 from collections.abc import Iterable
 
+def align(v,a):
+    return int(math.ceil(v/a)*a)
 
 def generate_thr(img_shape, min=0, max=4):
     min_perlin_scale = min
@@ -56,8 +58,16 @@ def lerp_np(x, y, w):
     fin_out = (y - x) * w + x
     return fin_out
 
-
 def rand_perlin_2d_np(shape, res, fade=lambda t: 6 * t ** 5 - 15 * t ** 4 + 10 * t ** 3):
+    if shape[0]%res[0]!= 0 or shape[1]%res[1]!= 0:
+        align_shape = [align(shape[0],res[0]),align(shape[1],res[1])]
+        perlin_noise_np = _rand_perlin_2d_np(align_shape,res,fade) 
+        perlin_noise_np = perlin_noise_np[:shape[0],:shape[1]]
+        return perlin_noise_np
+    return _rand_perlin_2d_np(shape,res,fade) 
+
+
+def _rand_perlin_2d_np(shape, res, fade=lambda t: 6 * t ** 5 - 15 * t ** 4 + 10 * t ** 3):
     delta = (res[0] / shape[0], res[1] / shape[1])
     d = (shape[0] // res[0], shape[1] // res[1])
     grid = np.mgrid[0:res[0]:delta[0], 0:res[1]:delta[1]].transpose(1, 2, 0) % 1
