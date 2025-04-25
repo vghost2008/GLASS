@@ -13,7 +13,15 @@ import utils
 import numpy as np
 import time
 from wml.wtorch.data import DataLoader as torchDataLoader
-
+#[(0, 'can'), (1, 'fabric'), (2, 'fruit_jelly'), (3, 'rice'), (4, 'sheet_metal'), (5, 'vial'), (6, 'wallplugs'), (7, 'walnuts')]
+#classname walnuts, split DatasetSplit.TRAIN, len 480, 7
+#classname can, split DatasetSplit.TRAIN, len 458, 0
+#classname fabric, split DatasetSplit.TRAIN, len 430, 1
+#classname rice, split DatasetSplit.TRAIN, len 348, 3
+#classname vial, split DatasetSplit.TRAIN, len 332, 5
+#classname wallplugs, split DatasetSplit.TRAIN, len 326, 6
+#classname fruit_jelly, split DatasetSplit.TRAIN, len 300, 2
+#classname sheet_metal, split DatasetSplit.TRAIN, len 156, 4
 DataLoader = torch.utils.data.DataLoader
 #DataLoader = torchDataLoader
 
@@ -181,6 +189,7 @@ def dataset(
     all_names = ["can"  , "fabric"  , "fruit_jelly"  , "rice"  , "sheet_metal"  , "vial"  , "wallplugs"  , "walnuts"]
 
     print(f"subdatasets {subdatasets}")
+    subdatasets = list(subdatasets)
     for i,v in enumerate(list(subdatasets)):
         try:
             if len(v)<=2:
