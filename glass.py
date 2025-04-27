@@ -228,6 +228,7 @@ class GLASS(torch.nn.Module):
 
         self.distribution = training_data.dataset.distribution
         xlsx_path = './datasets/excel/' + name.split('_')[0] + '_distribution.xlsx'
+        '''
         try:
             if self.distribution == 1:  # rejudge by image-level spectrogram analysis
                 self.distribution = 1
@@ -250,6 +251,9 @@ class GLASS(torch.nn.Module):
             print(f"ERROR: distribution faild, {e}")
             self.distribution = 0
             self.svd = 0
+        '''
+        self.distribution = 0
+        self.svd = 0
 
         # judge by image-level spectrogram analysis
         if self.distribution == 1:
