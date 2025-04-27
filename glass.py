@@ -62,6 +62,9 @@ class GLASS(torch.nn.Module):
         self.scaler = torch.cuda.amp.GradScaler(init_scale=100.0)
         self.max_norm = 16
         self.prf = None
+        self.f1_w = 9
+        self.pauroc_w = 1
+        self.sum_w = self.f1_w+self.pauroc_w
 
 
     def load(
@@ -196,6 +199,9 @@ class GLASS(torch.nn.Module):
 
 
         return features, shapes #patch_shapes ((H0,W0),(H1,W1),...)
+
+    def get_score(self,f1,pauroc):
+        return (f1*self.f1_w+pauroc*self.pauroc_w)/self.sum_w
 
     def trainer(self, training_data, val_data, base_training_data,name):
         print(self)
@@ -341,9 +347,9 @@ class GLASS(torch.nn.Module):
     
                     eval_path = osp.join(self.run_save_path,'eval' , name)
                     train_path = osp.join(self.run_save_path,'training' , name)
-                    cur_score = (best_f1*2+pixel_auroc)/3
+                    cur_score = self.get_score(pauroc=pixel_auroc,f1=best_f1)
                     if best_record is not None:
-                        best_score = (best_record[2]+best_record[4]*2)/3
+                        best_score = self.get_score(pauroc=best_record[2],f1=best_record[4])
                         print(f"Best score {best_score}, current score {cur_score}")
                     if best_record is None:
                         best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
