@@ -337,9 +337,9 @@ class GLASS(torch.nn.Module):
     
                     eval_path = osp.join(self.run_save_path,'eval' , name)
                     train_path = osp.join(self.run_save_path,'training' , name)
-                    cur_score = (best_f1+pixel_auroc)/2
+                    cur_score = (best_f1*2+pixel_auroc)/3
                     if best_record is not None:
-                        best_score = (best_record[2]+best_record[4])/2
+                        best_score = (best_record[2]+best_record[4]*2)/3
                         print(f"Best score {best_score}, current score {cur_score}")
                     if best_record is None:
                         best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
@@ -777,6 +777,17 @@ class GLASS(torch.nn.Module):
         return pbar_str2, all_p_true_, all_p_fake_
 
 
+    def _tester(self, test_data, name,ckpt_path=None):
+        if ckpt_path is None:
+            ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best_*')
+            for cp in ckpt_path:
+                try:
+                    best_precision, best_recall,best_f1, p_auroc, pixel_ap, pixel_pro, epoch = self._tester(test_data,name,cp)
+                    print(f"ckpt: {osp.basename(cp)}, M:{(best_f1+p_auroc)/2:.3f}, pixel_auroc: {p_auroc}, Precision: {best_precision}, Recall: {best_recall}, F1: {best_f1}, best_epoch: {epoch}\n" )
+                except:
+                    pass
+        
+            return best_precision, best_recall,best_f1, p_auroc, pixel_ap, pixel_pro, epoch
 
     def tester(self, test_data, name,ckpt_path=None):
         ckpt_path = self.load_ckpt(ckpt_path=ckpt_path)
@@ -803,7 +814,11 @@ class GLASS(torch.nn.Module):
     
     def load_ckpt(self,ckpt_path=None):
         if ckpt_path is None:
-            ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
+            s_path = osp.join(self.ckpt_dir,"ckpt_best.pth")
+            if osp.exists(s_path):
+                ckpt_path = [s_path]
+            else:
+                ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
         else:
             ckpt_path = [ckpt_path]
         if len(ckpt_path) != 0:
@@ -996,6 +1011,7 @@ class GLASS(torch.nn.Module):
         return list(image_scores), list(masks)
 
     def run_predict(self, test_data, name):
+        np.seterr(all='warn')
         if self.load_ckpt() is not None:
             images, scores, segmentations, labels_gt, masks_gt,img_paths = self.predict(test_data)
             threshold = utils.read_threshold_file(self.run_save_path,test_data.dataset.classname)
@@ -1033,9 +1049,10 @@ class GLASS(torch.nn.Module):
             tifffile.imwrite(full_path_tiff,raw_mask_fp16)
 
             full_path_png = osp.join(self.run_save_path+'_tiff', "predict","anomaly_images_thresholded",rpath)
-            full_path_png = wmlu.change_suffix(full_path_tiff,"png")
+            full_path_png = wmlu.change_suffix(full_path_png,"png")
 
             raw_mask_thr = ((raw_mask>threshold)*255).astype(np.uint8)
+            wmlu.make_dir_for_file(full_path_png)
             cv2.imwrite(full_path_png,raw_mask_thr)
 
         print(f"Predict run save path {self.run_save_path}/{self.run_save_path+'_tiff'}")

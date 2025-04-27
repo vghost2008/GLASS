@@ -65,11 +65,26 @@ def compute_best_pr_re(anomaly_ground_truth_labels, anomaly_prediction_weights):
     Computes the best precision, recall and threshold for a given set of
     anomaly ground truth labels and anomaly prediction weights.
     """
-    precision, recall, f1_scores,thresholds = precision_recall_curve(anomaly_prediction_weights,anomaly_ground_truth_labels.astype(np.int32))
+    precision, recall, f1_scores,thresholds = precision_recall_curve(anomaly_prediction_weights,anomaly_ground_truth_labels.astype(np.int32),
+        thresholds=np.linspace(0.001,0.999,100))
     idx = np.argmax(f1_scores)
     best_threshold = thresholds[idx]
     best_precision = precision[idx]
     best_recall = recall[idx]
+    if best_threshold<=0.1:
+        precision, recall, f1_scores,thresholds = precision_recall_curve(anomaly_prediction_weights,anomaly_ground_truth_labels.astype(np.int32),
+        thresholds=np.linspace(0.001,0.1,20))
+        idx = np.argmax(f1_scores)
+        best_threshold = thresholds[idx]
+        best_precision = precision[idx]
+        best_recall = recall[idx]
+    elif best_threshold>=0.9:
+        precision, recall, f1_scores,thresholds = precision_recall_curve(anomaly_prediction_weights,anomaly_ground_truth_labels.astype(np.int32),
+        thresholds=np.linspace(0.9,1.0,20))
+        idx = np.argmax(f1_scores)
+        best_threshold = thresholds[idx]
+        best_precision = precision[idx]
+        best_recall = recall[idx]
     print(best_threshold, best_precision, best_recall)
 
     return best_threshold, best_precision, best_recall, f1_scores[idx]
