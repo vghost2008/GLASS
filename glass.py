@@ -815,6 +815,7 @@ class GLASS(torch.nn.Module):
     def load_ckpt(self,ckpt_path=None):
         if ckpt_path is None:
             s_path = osp.join(self.ckpt_dir,"ckpt_best.pth")
+            #s_path = osp.join(self.ckpt_dir,"ckpt.pth")
             if osp.exists(s_path):
                 ckpt_path = [s_path]
             else:

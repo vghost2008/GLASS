@@ -263,9 +263,7 @@ class NetworkFeatureAggregatorV3(NetworkFeatureAggregator):
         outputs = super().forward(images)
         features = [outputs[n] for n in self.layers_to_extract_from]
         new_features = []
-        shapes = []
         for f,m in zip(features,self.lateral_convs):
-            shapes.append(f.shape[-2:])
             cur_f = m(f)
             cur_f = F.interpolate(cur_f,size=(IH//4,IW//4),mode="bilinear")
             new_features.append(cur_f)
@@ -282,6 +280,9 @@ class NetworkFeatureAggregatorV3(NetworkFeatureAggregator):
 
         feature = torch.cat([first_feature,second_feature],dim=1)
         feature = self.output(feature)
+
+        shapes = []
+        shapes.append(feature.shape[-2:])
 
         feature = torch.permute(feature,[0,2,3,1])
         C = feature.shape[-1]
