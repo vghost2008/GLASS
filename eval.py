@@ -60,9 +60,9 @@ def run(
         os.makedirs(models_dir, exist_ok=True)
         for i, GLASS in enumerate(glass_list):
             #######################################
-            wtt.register_forward_hook(GLASS,wtt.isfinite_hook)
-            wtt.register_forward_hook(GLASS,wtt.islarge_hook)
-            wtt.register_tensor_hook(GLASS,wtt.tensor_isfinite_hook)
+            #wtt.register_forward_hook(GLASS,wtt.isfinite_hook)
+            #wtt.register_forward_hook(GLASS,wtt.islarge_hook)
+            #wtt.register_tensor_hook(GLASS,wtt.tensor_isfinite_hook)
             #######################################
             flag = 0., 0., 0., 0., 0., -1.
             if GLASS.backbone.seed is not None:
