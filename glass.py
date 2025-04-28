@@ -166,17 +166,18 @@ class GLASS(torch.nn.Module):
         self.dataset_name = ""
         self.logger = None
 
-        if is_training:
-            num_heads = 12
-            inp_num = 6
-            embed_dim = target_embed_dimension
-            aggregation = []
-            for i in range(1):
-                blk = Aggregation_Block(dim=embed_dim, num_heads=num_heads, mlp_ratio=4.,
-                                        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-8))
-                aggregation.append(blk)
-            self.aggregation = nn.ModuleList(aggregation)
-            self.prototype_token = nn.ParameterList([nn.Parameter(torch.randn(inp_num, embed_dim))])
+        #if is_training:
+        self.is_training = is_training
+        num_heads = 12
+        inp_num = 6
+        embed_dim = target_embed_dimension
+        aggregation = []
+        for i in range(1):
+            blk = Aggregation_Block(dim=embed_dim, num_heads=num_heads, mlp_ratio=4.,
+                                    qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-8))
+            aggregation.append(blk)
+        self.aggregation = nn.ModuleList(aggregation)
+        self.prototype_token = nn.ParameterList([nn.Parameter(torch.randn(inp_num, embed_dim))])
 
     def gather_loss(self, query, keys,mask=None):
         self.distribution = 1. - F.cosine_similarity(query.unsqueeze(2), keys.unsqueeze(1), dim=-1)
