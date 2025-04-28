@@ -58,6 +58,7 @@ _BACKBONES = {
     "convnext": 'timm.create_model("convnextv2_base", pretrained=True)',
     "maskrcnn": 'create_maskrcnn()',
     "dino": 'create_dino()',
+    "ensemble": 'create_ensemble()',
 }
 
 def create_maskrcnn():
@@ -114,8 +115,26 @@ class DINOBackbone(nn.Module):
         
         return res
 
+class Ensemble(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.backbone0 = create_maskrcnn()
+        self.backbone1 = DINOBackbone()
+        self.aggregator = "NetworkFeatureAggregatorV4"
+    
+    def forward(self,x):
+        with torch.no_grad():
+            res0 = self.backbone0(x)
+            res1 = self.backbone1(x)
+            res1['A'] = res0['0']
+        return res1
+    
+
 def create_dino():
     return DINOBackbone()
+
+def create_ensemble():
+    return Ensemble()
 
 def load(name):
     backbone = eval(_BACKBONES[name])
@@ -129,5 +148,8 @@ def load(name):
     elif name == "dino":
         backbone.out_info = [['0','1','2','3','4','5','6','7'],[768]*8]
         backbone.out_dict = ['0','1','2','3','4','5','6','7']
+    elif name == "ensemble":
+        backbone.out_info = [['0','1','2','3','4','5','6','7'],[768]*8]
+        backbone.out_dict = ['A','0','1','2','3','4','5','6','7']
     
     return backbone

@@ -105,6 +105,10 @@ class GLASS(torch.nn.Module):
             feature_aggregator = common.NetworkFeatureAggregatorV3(
                 self.backbone, self.layers_to_extract_from, self.device, train_backbone
             ).to(device)
+        elif hasattr(self.backbone,"aggregator") and self.backbone.aggregator == "NetworkFeatureAggregatorV4":
+            feature_aggregator = common.NetworkFeatureAggregatorV4(
+                self.backbone, self.layers_to_extract_from, self.device, train_backbone
+            ).to(device)
         else:
             feature_aggregator = common.NetworkFeatureAggregatorV2(
                 self.backbone, self.layers_to_extract_from, self.device, train_backbone
@@ -330,7 +334,7 @@ class GLASS(torch.nn.Module):
                     print(f"ERROR: {e}")
     
                 if (i_epoch + self.eval_offset) % self.eval_epochs == 0:
-                    print(f"Begin eval...")
+                    print(f"\nBegin eval...")
                     sys.stdout.flush()
                     t0 = time.time()
                     images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
@@ -350,7 +354,9 @@ class GLASS(torch.nn.Module):
                     cur_score = self.get_score(pauroc=pixel_auroc,f1=best_f1)
                     if best_record is not None:
                         best_score = self.get_score(pauroc=best_record[2],f1=best_record[4])
-                        print(f"Best score {best_score}, current score {cur_score}")
+                        print(f"\nBest score {best_score}, current score {cur_score}\n")
+                        self.show_record(best_record,"best record")
+                    self.show_record([image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch],"current record")
                     if best_record is None:
                         best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
                         ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
@@ -359,8 +365,6 @@ class GLASS(torch.nn.Module):
                         if osp.exists(train_path):
                             shutil.copytree(train_path, eval_path)
                         
-    
-
                     elif cur_score>best_score:
                         best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
                         os.remove(ckpt_path_best)
@@ -384,7 +388,7 @@ class GLASS(torch.nn.Module):
                                 f" E:{i_epoch}({best_record[-1]})"
                     pbar_str += pbar_str1
                     pbar.set_description_str(pbar_str)
-                    print(f"Eval finish, time cost {time.time()-t0:.3f}s")
+                    print(f"Eval finish, time cost {time.time()-t0:.3f}s\n")
                     sys.stdout.flush()
     
                 torch.save(state_dict, ckpt_path_save)
@@ -613,7 +617,8 @@ class GLASS(torch.nn.Module):
             pbar_str += f" sample:{sample_num}"
             pbar_str2 = pbar_str
             pbar_str += pbar_str1
-            pbar.set_description_str(pbar_str)
+            if self.logger.g_iter % 10 == 1:
+                pbar.set_description_str(pbar_str)
 
             tda_error_nr = 0
 
@@ -903,3 +908,8 @@ class GLASS(torch.nn.Module):
             cv2.imwrite(full_path_png,raw_mask_thr)
 
         print(f"Predict run save path {self.run_save_path}/{self.run_save_path+'_tiff'}")
+
+    def show_record(self,record,info=""):
+        image_auroc, best_precision, p_auroc, best_recall, best_f1, epoch = record
+        score = self.get_score(pauroc=record[2],f1=record[4])
+        print(f"{info}: M:{score:.3f}, pixel_auroc: {p_auroc}, Precision: {best_precision}, Recall: {best_recall}, F1: {best_f1}, best_epoch: {epoch}\n" )
