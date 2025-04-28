@@ -212,11 +212,11 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
                 last_feature = F.interpolate(last_feature,scale_factor=2,mode='nearest')
                 last_feature = m(torch.cat([f,last_feature],dim=1))
         
-        feature = self.output(last_feature)
+        feature = self.output(last_feature) #[B,C,H,W]
 
         feature = torch.permute(feature,[0,2,3,1])
         C = feature.shape[-1]
-        feature = torch.reshape(feature,[-1,C])
+        feature = torch.reshape(feature,[-1,C]) #(B*H*W,C)
         return feature,shapes
 
 

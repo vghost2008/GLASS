@@ -18,6 +18,8 @@ import metrics
 import sys
 import cv2
 import utils
+import torch.nn as nn
+from functools import partial
 import glob
 import shutil
 import wml.wml_utils as wmlu
@@ -27,6 +29,7 @@ import wml.wtorch.train_toolkit as wtt
 import wml.img_utils as wmli
 import colorama
 import time
+from models.vision_transformer import Aggregation_Block 
 from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
 
 def trace_grad_fn(grad_fn, depth=0):
@@ -60,7 +63,7 @@ class GLASS(torch.nn.Module):
         super(GLASS, self).__init__()
         self.device = device
         self.scaler = torch.cuda.amp.GradScaler(init_scale=100.0)
-        self.max_norm = 16
+        self.max_norm = 8
         self.prf = None
         self.f1_w = 9
         self.pauroc_w = 1
@@ -92,6 +95,7 @@ class GLASS(torch.nn.Module):
             svd=0,
             step=20,
             limit=392,
+            is_training = False,
             **kwargs,
     ):
 
@@ -158,8 +162,27 @@ class GLASS(torch.nn.Module):
         self.dataset_name = ""
         self.logger = None
 
+        if is_training:
+            num_heads = 12
+            inp_num = 6
+            embed_dim = target_embed_dimension
+            aggregation = []
+            for i in range(1):
+                blk = Aggregation_Block(dim=embed_dim, num_heads=num_heads, mlp_ratio=4.,
+                                        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-8))
+                aggregation.append(blk)
+            self.aggregation = nn.ModuleList(aggregation)
+            self.prototype_token = nn.ParameterList([nn.Parameter(torch.randn(inp_num, embed_dim))])
+
+    def gather_loss(self, query, keys,mask=None):
+        self.distribution = 1. - F.cosine_similarity(query.unsqueeze(2), keys.unsqueeze(1), dim=-1)
+        self.distance, self.cluster_index = torch.min(self.distribution, dim=2)
+        gather_loss = self.distance.mean()
+        return gather_loss
+
     def get_embed_optim(self):
-        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.forward_modules,return_unused=True)
+        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(wtu.ChainModel([self.forward_modules,self.aggregation,self.prototype_token]),
+        return_unused=True)
         optimizer = torch.optim.AdamW(
                 weights,
                 lr=self.lr,
@@ -425,6 +448,7 @@ class GLASS(torch.nn.Module):
             aug = aug.to(torch.float).to(self.device)
             img = data_item["image"]
             img = img.to(torch.float).to(self.device)
+            B = img.shape[0]
             with torch.cuda.amp.autocast():
                 if self.pre_proj > 0:
                     fake_feats = self.pre_projection(self._embed(aug, evaluation=False)[0])
@@ -501,6 +525,17 @@ class GLASS(torch.nn.Module):
                 r_f = torch.tensor([torch.quantile(dist_f, q=self.radius)]).to(self.device)
                 proj_feats = c_f_points if self.svd == 1 else true_points
                 r = r_t if self.svd == 1 else 1
+
+                #####################################################################INP
+                a_f0 = torch.reshape(true_feats,[B,-1,true_feats.shape[-1]])
+                a_f1 = torch.reshape(fake_feats,[B,-1,true_feats.shape[-1]])
+                a_f = torch.cat([a_f0,a_f1],dim=1)
+                mask = torch.cat(torch.zeros_like(mask_s_gt[:,0],mask_s_gt[:,0]))
+                agg_prototype = self.prototype_token[0]
+                for i, blk in enumerate(self.aggregation):
+                    agg_prototype = blk(agg_prototype.unsqueeze(0).repeat((B, 1, 1)), a_f)
+                g_loss = self.gather_loss(a_f, agg_prototype,mask=mask)
+                #####################################################################
     
                 if self.svd == 1:
                     h = fake_points - proj_feats
