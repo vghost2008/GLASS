@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch_tensorrt
 import tensorrt as trt
 from wml.wtorch.nn import MParent,WeakRefmodel
+import wml.wtorch.nn as wnn
 import wml.wml_utils as wmlu
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406])
@@ -308,6 +309,22 @@ class NetworkFeatureAggregatorV3(NetworkFeatureAggregator):
         res.extend(list(self.output.parameters()))
         return res
 
+class FeatureAttenation(nn.Module):
+    def __init__(self,channels_nr):
+        super().__init__()
+        self.weights = nn.Parameter(torch.ones([channels_nr])*100)
+        self.norm = wnn.LayerNorm(channels_nr)
+        self.grad_scale = wnn.GradScale(0.05)
+
+    def forward(self,x):
+        weights = torch.sigmoid(self.weights)
+        weights = weights.view([1,-1,1,1])
+        weights = self.grad_scale(weights)
+        x = x*weights
+        x = self.norm(x)
+        return x
+
+
 class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
     """Efficient extraction of network features."""
 
@@ -328,6 +345,7 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
 
         self.out_convs.append(ConvModule(256,256,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
         self.output = ConvModule(channels*2+256,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN'))
+        self.att = FeatureAttenation(channels*2)
         wtt.set_bn_eps(self,1e-3)
         self.to(self.device)
         '''
@@ -372,6 +390,7 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
 
         feature = torch.cat([first_feature,second_feature,base_feature],dim=1)
         feature = self.output(feature)
+        feature = self.att(feature)
 
         shapes = []
         shapes.append(feature.shape[-2:])
@@ -395,4 +414,5 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
         res.extend(list(self.lateral_convs.parameters()))
         res.extend(list(self.out_convs.parameters()))
         res.extend(list(self.output.parameters()))
+        res.extend(list(self.att.parameters()))
         return res
