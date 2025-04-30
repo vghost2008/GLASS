@@ -188,11 +188,11 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
         for i,ic in enumerate(in_channels):
             self.lateral_convs.append(nn.Conv2d(ic,channels,1))
             if i<len(in_channels)-1:
-                self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
+                self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01)))
             else:
-                self.out_convs.append(ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
+                self.out_convs.append(ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01)))
 
-        self.output = ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN'))
+        self.output = ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01))
         wtt.set_bn_eps(self.lateral_convs,1e-3)
         wtt.set_bn_eps(self.out_convs,1e-3)
         wtt.set_bn_eps(self.output,1e-3)
@@ -258,9 +258,9 @@ class NetworkFeatureAggregatorV3(NetworkFeatureAggregator):
             self.lateral_convs.append(nn.Conv2d(ic,channels,1))
         
         for i in range(2):
-            self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
+            self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01)))
 
-        self.output = ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN'))
+        self.output = ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01))
         wtt.set_bn_eps(self.lateral_convs,1e-3)
         wtt.set_bn_eps(self.out_convs,1e-3)
         wtt.set_bn_eps(self.output,1e-3)
@@ -345,10 +345,10 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
             self.lateral_convs.append(nn.Conv2d(ic,channels,1))
         
         for i in range(2):
-            self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
+            self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01)))
 
-        self.out_convs.append(ConvModule(256,256,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
-        self.output = ConvModule(channels*2+256,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN'))
+        self.out_convs.append(ConvModule(256,256,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01)))
+        self.output = ConvModule(channels*2+256,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01))
         self.att = FeatureAttenation(channels*2)
         wtt.set_bn_eps(self.lateral_convs,1e-3)
         wtt.set_bn_eps(self.out_convs,1e-3)
