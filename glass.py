@@ -577,6 +577,7 @@ class GLASS(torch.nn.Module):
                     info += f"gaus loss is infinite,"
                 if not torch.isfinite(focal_loss):
                     info += f"focal loss is infinite,"
+                loss_nr = len(model_loss)
                 model_loss = list(filter(torch.isfinite,model_loss))
                 if len(model_loss) == 0:
                     print(info)
@@ -584,7 +585,7 @@ class GLASS(torch.nn.Module):
                     if tda_error_nr >= 5:
                         raise RuntimeError(f"Too many NaN loss error.")
                         return None,0,0
-                if len(model_loss)!=3:
+                if len(model_loss)!=loss_nr:
                     print(info)
 
                 loss = sum(model_loss)
