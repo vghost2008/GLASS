@@ -20,12 +20,8 @@ nohup python main.py --results_path results_mvtec5 --gpu 3 --seed 0 --test ckpt 
 
 
 # test
-nohup python main.py --results_path results_mvtec5 --gpu 0 --seed 0 --test ckpt net -b maskrcnn --pretrain_embed_dimension 512 --target_embed_dimension 512 --patchsize 3 --meta_epochs 640  --dsc_layers 2 --dsc_hidden 1024 --pre_proj 1 --mining 1 --noise 0.015 --radius 0.75 --p 0.5 --step 20 --limit 392 dataset --distribution 0 --mean 0.5 --std 0.1 --fg 1 --rand_aug 1 --resize 512 --imagesize 512 --batch_size 4 --align 32 -d 4 -d 2 > a.log &
-
-
-
-
-nohup python main.py --results_path results_mvtec5 --gpu 3 --seed 0 --test ckpt net -b maskrcnn --pretrain_embed_dimension 512 --target_embed_dimension 512 --patchsize 3 --meta_epochs 640  --dsc_layers 2 --dsc_hidden 1024 --pre_proj 1 --mining 1 --noise 0.015 --radius 0.75 --p 0.5 --step 20 --limit 392 dataset --distribution 0 --mean 0.5 --std 0.1 --fg 1 --rand_aug 1 --resize 512 --imagesize 512 --batch_size 4 --align 32 -d 5 -d 3 > d.log &
+nohup python main.py --results_path results_mvtec5 --gpu 0 --seed 0 --test ckpt net -b maskrcnn --pretrain_embed_dimension 512 --target_embed_dimension 512 --patchsize 3 --meta_epochs 640  --dsc_layers 2 --dsc_hidden 1024 --pre_proj 1 --mining 1 --noise 0.015 --radius 0.75 --p 0.5 --step 20 --limit 392 dataset --distribution 0 --mean 0.5 --std 0.1 --fg 1 --rand_aug 1 --resize 512 --imagesize 512 --batch_size 4 --align 32 -d 4 -d 2 -d 7 -d 1 > a.log &
+nohup python main.py --results_path results_mvtec5 --gpu 3 --seed 0 --test ckpt net -b maskrcnn --pretrain_embed_dimension 512 --target_embed_dimension 512 --patchsize 3 --meta_epochs 640  --dsc_layers 2 --dsc_hidden 1024 --pre_proj 1 --mining 1 --noise 0.015 --radius 0.75 --p 0.5 --step 20 --limit 392 dataset --distribution 0 --mean 0.5 --std 0.1 --fg 1 --rand_aug 1 --resize 512 --imagesize 512 --batch_size 4 --align 32 -d 5 -d 3 -d 6 -d 0 > d.log &
 ###
 python eval.py --results_path results_mvtec5 --gpu 1 --seed 0 --test ckpt net -b ensemble --pretrain_embed_dimension 512 --target_embed_dimension 512 --patchsize 3 --meta_epochs 640 --dsc_layers 2 --dsc_hidden 1024 --pre_proj 1 --mining 1 --noise 0.015 --radius 0.75 --p 0.5 --step 20 --limit 392 dataset --distribution 0 --mean 0.5 --std 0.1 --fg 1 --rand_aug 1 --batch_size 8 --resize 512 --imagesize 512 -d can -d fabric -d fruit_jelly -d rice -d sheet_metal -d vial -d wallplugs -d walnuts
 

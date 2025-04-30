@@ -49,7 +49,6 @@ class ProjectionV2(torch.nn.Module):
         self.layers = torch.nn.Sequential()
         _in = None
         _out = None
-        in_planes = 256
         for i in range(n_layers):
             _in = in_planes+64 if i == 0 else _out
             _out = out_planes
@@ -86,7 +85,7 @@ class ProjectionV2(torch.nn.Module):
                               qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-8))
             decoder.append(blk)
         self.decoder = nn.ModuleList(decoder)
-        self.bn = nn.BatchNorm2d(in_planes,eps=1e-3,momentum=0.01)
+        #self.bn = nn.BatchNorm2d(in_planes,eps=1e-3,momentum=0.01)
         wtt.set_bn_momentum(self,0.01)
 
 
@@ -139,6 +138,7 @@ class ProjectionV2(torch.nn.Module):
         #x:[B*H*W,C]
 
         B,C,H,W = shape
+        input_x = x
         x,target_shape = self.trans2lc(x,shape)
         en,_ = self.trans2chw(raw_x,shape)
         if mask is not None:
@@ -181,19 +181,14 @@ class ProjectionV2(torch.nn.Module):
         map = torch.permute(map,[0,2,3,1])
         map = torch.reshape(map,[-1,map.shape[-1]])
         map = torch.tile(map,[1,16])
-        de = self.fuse_feature(de_list)
-        de = F.interpolate(de,size=(H,W),mode="bilinear")
-        de = self.bn(de)
-        de = torch.permute(de,[0,2,3,1])
-        de = torch.reshape(de,[-1,de.shape[-1]])
-        de = torch.cat([de,map],dim=-1)
-        de = self.layers(de)
+        cur_x = torch.cat([input_x,map],dim=-1)
+        cur_x = self.layers(cur_x)
 
         if return_loss and self.training:
             res = dict(g_loss=g_loss*0.2,lsm=sm_loss*0.1)
-            return de,res
+            return cur_x,res
         else:
-            return de
+            return cur_x
 
 
     def gather_loss(self, query, keys,mask=None):
