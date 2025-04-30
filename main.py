@@ -46,7 +46,7 @@ def run(
         #utils.fix_seeds(seed, device)
         dataset_name = dataloaders["training"].name
         imagesize = dataloaders["training"].dataset.imagesize
-        glass_list = methods["get_glass"](imagesize, device,dataloader_len=len(dataloaders))
+        glass_list = methods["get_glass"](imagesize, device,dataloader_len=len(dataloaders["training"]))
 
         LOGGER.info(
             "Selecting dataset [{}] ({}/{}) {}".format(

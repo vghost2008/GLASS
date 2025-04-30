@@ -1,4 +1,5 @@
 import torch
+import wml.wtorch.train_toolkit as wtt
 
 
 def init_weight(m):
@@ -32,6 +33,7 @@ class Discriminator(torch.nn.Module):
         self.tail = torch.nn.Linear(_hidden, 1, bias=False)
         self.sigmoid = torch.nn.Sigmoid()
         self.apply(init_weight)
+        wtt.set_bn_momentum(self,0.01)
 
     def forward(self, x):
         with torch.cuda.amp.autocast(False):

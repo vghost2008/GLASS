@@ -5,6 +5,7 @@ import wml.semantic.mask_utils as smu
 import torch.nn as nn
 from functools import partial
 import torch.nn.functional as F
+import wml.wtorch.train_toolkit as wtt
 
 def modify_grad_v2(x, factor):
     factor = factor.expand_as(x)
@@ -85,6 +86,8 @@ class ProjectionV2(torch.nn.Module):
                               qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-8))
             decoder.append(blk)
         self.decoder = nn.ModuleList(decoder)
+        wtt.set_bn_momentum(self,0.01)
+
 
     @staticmethod
     def trans2lc(x,shape):
@@ -185,7 +188,7 @@ class ProjectionV2(torch.nn.Module):
         de = self.layers(de)
 
         if return_loss and self.training:
-            res = dict(g_loss=g_loss*0.2,lsm=sm_loss)
+            res = dict(g_loss=g_loss*0.2,lsm=sm_loss*0.1)
             return de,res
         else:
             return de

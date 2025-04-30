@@ -153,7 +153,7 @@ class GLASS(torch.nn.Module):
         self.dsc_hidden = dsc_hidden
         self.discriminator = Discriminator(self.target_embed_dimension, n_layers=dsc_layers, hidden=dsc_hidden)
         self.discriminator.to(self.device)
-        self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2)
+        self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2,weight_decay=1e-4)
         self.dsc_lr = WarmupCosLR(self.dsc_opt,total_iters=dataloader_len*640,warmup_total_iters=1000)
         self.dsc_margin = dsc_margin
 
@@ -175,12 +175,6 @@ class GLASS(torch.nn.Module):
         self.dataset_name = ""
         self.logger = None
 
-
-    def gather_loss(self, query, keys,mask=None):
-        self.distribution = 1. - F.cosine_similarity(query.unsqueeze(2), keys.unsqueeze(1), dim=-1)
-        self.distance, self.cluster_index = torch.min(self.distribution, dim=2)
-        gather_loss = self.distance.mean()
-        return gather_loss
 
     def get_embed_optim(self):
         bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.forward_modules,
