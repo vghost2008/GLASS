@@ -141,7 +141,7 @@ class GLASS(torch.nn.Module):
         self.dsc_hidden = dsc_hidden
         self.discriminator = Discriminator(self.target_embed_dimension, n_layers=dsc_layers, hidden=dsc_hidden)
         self.discriminator.to(self.device)
-        self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2)
+        self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2, weight_decay=1e-4)
         self.dsc_margin = dsc_margin
 
         self.c = torch.tensor(0)
