@@ -193,7 +193,9 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
                 self.out_convs.append(ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
 
         self.output = ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN'))
-        wtt.set_bn_eps(self,1e-3)
+        wtt.set_bn_eps(self.lateral_convs,1e-3)
+        wtt.set_bn_eps(self.out_convs,1e-3)
+        wtt.set_bn_eps(self.output,1e-3)
 
         
 
@@ -259,7 +261,9 @@ class NetworkFeatureAggregatorV3(NetworkFeatureAggregator):
             self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
 
         self.output = ConvModule(channels*2,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN'))
-        wtt.set_bn_eps(self,1e-3)
+        wtt.set_bn_eps(self.lateral_convs,1e-3)
+        wtt.set_bn_eps(self.out_convs,1e-3)
+        wtt.set_bn_eps(self.output,1e-3)
         
 
     def forward(self, images, eval=True):
@@ -346,7 +350,9 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
         self.out_convs.append(ConvModule(256,256,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
         self.output = ConvModule(channels*2+256,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN'))
         self.att = FeatureAttenation(channels*2)
-        wtt.set_bn_eps(self,1e-3)
+        wtt.set_bn_eps(self.lateral_convs,1e-3)
+        wtt.set_bn_eps(self.out_convs,1e-3)
+        wtt.set_bn_eps(self.output,1e-3)
         self.to(self.device)
         '''
         with torch.cuda.amp.autocast():
