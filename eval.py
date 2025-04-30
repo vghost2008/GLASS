@@ -41,6 +41,8 @@ def run(
     result_collect = []
     data = {'Class': [], 'Distribution': [], 'Foreground': []}
     df = pd.DataFrame(data)
+    all_pauroc = []
+    all_f1 = []
     for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
         #utils.fix_seeds(seed, device)
         dataset_name = dataloaders["training"].name
@@ -73,7 +75,10 @@ def run(
             best_precision, best_recall,best_f1, p_auroc, pixel_ap, pixel_pro, epoch =  GLASS.tester(dataloaders["testing"], dataset_name,ckpt_path=ckpt_path)
             cur_score = GLASS.get_score(pauroc=p_auroc,f1=best_f1)
             print(f"dataset_name: {dataset_name}, M:{(best_f1+p_auroc)/2:.3f}, pixel_auroc: {p_auroc}, Precision: {best_precision}, Recall: {best_recall}, F1: {best_f1}, best_epoch: {epoch}\n" )
+            all_pauroc.append(p_auroc)
+            all_f1.append(best_f1)
 
+    print(f"AUROC: {all_pauroc}, mean: {np.mean(all_pauroc):.4f}, F1: {all_f1}, mean: {np.mean(all_f1):.4f}")
     # save distribution judgment xlsx after all categories
     if len(df['Class']) != 0:
         os.makedirs('./datasets/excel', exist_ok=True)

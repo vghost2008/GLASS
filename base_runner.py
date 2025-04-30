@@ -90,7 +90,7 @@ def net(
     else:
         layers_to_extract_from_coll = [layers_to_extract_from]
 
-    def get_glass(input_shape, device,is_training=False):
+    def get_glass(input_shape, device,is_training=False,dataloader_len=-1):
         glasses = []
         for backbone_name, layers_to_extract_from in zip(backbone_names, layers_to_extract_from_coll):
             backbone_seed = None
@@ -124,6 +124,7 @@ def net(
                 step=step,
                 limit=limit,
                 is_training = is_training,
+                dataloader_len=dataloader_len,
             )
             glasses.append(glass_inst.to(device))
         return glasses

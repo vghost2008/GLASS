@@ -14,6 +14,13 @@ import wml.wml_utils as wmlu
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406])
 IMAGENET_STD = np.array([0.229, 0.224, 0.225])
 
+def fuse_feature(feat_list):
+    return torch.stack(feat_list, dim=1).mean(dim=1)
+
+def fuse_feature_intpre(feat_list):
+    shape = feat_list[0].shape[-2:]
+    feat_list = feat_list[:1]+[F.interpolate(x,size=shape,mode="bilinear") for x in feat_list[1:]]
+    return torch.stack(feat_list, dim=1).mean(dim=1)
 
 class Preprocessing(torch.nn.Module):
     def __init__(self, input_dims, output_dim):
@@ -95,6 +102,7 @@ class NetworkFeatureAggregator(torch.nn.Module):
         self.backbone = backbone
         self.device = device
         self.train_backbone = train_backbone
+        self.raw_fea = None
         if hasattr(backbone,'out_dict'):
             out_dict = backbone.out_dict
             self.layers_to_extract_from = out_dict
@@ -199,6 +207,7 @@ class NetworkFeatureAggregatorV2(NetworkFeatureAggregator):
     def forward(self, images, eval=True):
         outputs = super().forward(images)
         features = [outputs[n] for n in self.layers_to_extract_from]
+        self.raw_fea = features
         new_features = []
         shapes = []
         for f,m in zip(features,self.lateral_convs):
@@ -265,6 +274,7 @@ class NetworkFeatureAggregatorV3(NetworkFeatureAggregator):
         _,_,IH,IW = images.shape
         outputs = super().forward(images)
         features = [outputs[n] for n in self.layers_to_extract_from]
+        self.raw_fea = fuse_feature(features)
         new_features = []
         for f,m in zip(features,self.lateral_convs):
             cur_f = m(f)
@@ -311,13 +321,15 @@ class NetworkFeatureAggregatorV3(NetworkFeatureAggregator):
 class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
     """Efficient extraction of network features."""
 
-    def __init__(self, backbone, layers_to_extract_from, device, train_backbone=False,in_channels=[256,512,1024,2048]):
+    def __init__(self, backbone, layers_to_extract_from, device, train_backbone=False,in_channels=[256,512,1024,2048],out_channels=None):
         if hasattr(backbone,"out_info"):
             layers_to_extract_from,in_channels = backbone.out_info
         super().__init__(backbone=backbone,layers_to_extract_from=layers_to_extract_from,device=device,train_backbone=False)
         print(f"layers_to_extract_from: {self.layers_to_extract_from}")
-        wtt.freeze_model(backbone)
         channels = 256
+        if out_channels is None:
+            out_channels = channels*2
+        wtt.freeze_model(backbone)
         self.lateral_convs = nn.ModuleList()
         self.out_convs = nn.ModuleList()
         for i,ic in enumerate(in_channels):
@@ -327,7 +339,7 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
             self.out_convs.append(ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
 
         self.out_convs.append(ConvModule(256,256,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN')))
-        self.output = ConvModule(channels*2+256,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN'))
+        self.output = ConvModule(channels*2+256,out_channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN'))
         wtt.set_bn_eps(self,1e-3)
         self.to(self.device)
         '''
@@ -352,6 +364,7 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
             outputs = self.backbone(images)
         base_feature = outputs[self.layers_to_extract_from[0]]
         features = [outputs[n] for n in self.layers_to_extract_from[1:]]
+        self.raw_fea = fuse_feature(features)
         new_features = []
         for f,m in zip(features,self.lateral_convs):
             cur_f = m(f)

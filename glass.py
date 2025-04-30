@@ -2,7 +2,9 @@ from loss import FocalLoss
 from collections import OrderedDict
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
-from model import Discriminator, Projection, PatchMaker
+from model import Discriminator, PatchMaker
+from models.projection import Projection,ProjectionV2
+from wml.wtorch.wlr_scheduler import WarmupCosLR
 import tifffile
 import numpy as np
 import pandas as pd
@@ -31,6 +33,7 @@ import colorama
 import time
 from models.vision_transformer import Aggregation_Block 
 from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
+from optimizers import StableAdamW
 
 def trace_grad_fn(grad_fn, depth=0):
     if grad_fn is None:
@@ -96,6 +99,7 @@ class GLASS(torch.nn.Module):
             step=20,
             limit=392,
             is_training = False,
+            dataloader_len=-1,
             **kwargs,
     ):
 
@@ -111,7 +115,8 @@ class GLASS(torch.nn.Module):
             ).to(device)
         elif hasattr(self.backbone,"aggregator") and self.backbone.aggregator == "NetworkFeatureAggregatorV4":
             feature_aggregator = common.NetworkFeatureAggregatorV4(
-                self.backbone, self.layers_to_extract_from, self.device, train_backbone
+                self.backbone, self.layers_to_extract_from, self.device, train_backbone,
+                out_channels=target_embed_dimension,
             ).to(device)
         else:
             feature_aggregator = common.NetworkFeatureAggregatorV2(
@@ -127,12 +132,15 @@ class GLASS(torch.nn.Module):
         if self.train_backbone:
             #self.backbone_opt = torch.optim.AdamW(self.forward_modules["feature_aggregator"].backbone.parameters(), lr)
             self.backbone_opt = self.get_embed_optim()
+            self.backbone_lr = WarmupCosLR(self.backbone_opt,total_iters=dataloader_len*640,warmup_total_iters=1000)
 
         self.pre_proj = pre_proj
         if self.pre_proj > 0:
-            self.pre_projection = Projection(self.target_embed_dimension, self.target_embed_dimension, pre_proj)
+            self.pre_projection = ProjectionV2(self.target_embed_dimension, self.target_embed_dimension, pre_proj)
             self.pre_projection.to(self.device)
-            self.proj_opt = torch.optim.Adam(self.pre_projection.parameters(), lr, weight_decay=1e-5)
+            self.proj_opt = StableAdamW([{'params': self.pre_projection.parameters()}],
+                                lr=lr, betas=(0.9, 0.999), weight_decay=1e-4, amsgrad=True, eps=1e-10)
+            self.proj_lr = WarmupCosLR(self.proj_opt,total_iters=dataloader_len*640,warmup_total_iters=1000)
 
         self.eval_epochs = eval_epochs
         self.eval_offset = 0
@@ -146,6 +154,7 @@ class GLASS(torch.nn.Module):
         self.discriminator = Discriminator(self.target_embed_dimension, n_layers=dsc_layers, hidden=dsc_hidden)
         self.discriminator.to(self.device)
         self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2)
+        self.dsc_lr = WarmupCosLR(self.dsc_opt,total_iters=dataloader_len*640,warmup_total_iters=1000)
         self.dsc_margin = dsc_margin
 
         self.c = torch.tensor(0)
@@ -166,18 +175,6 @@ class GLASS(torch.nn.Module):
         self.dataset_name = ""
         self.logger = None
 
-        #if is_training:
-        self.is_training = is_training
-        num_heads = 12
-        inp_num = 6
-        embed_dim = target_embed_dimension
-        aggregation = []
-        for i in range(1):
-            blk = Aggregation_Block(dim=embed_dim, num_heads=num_heads, mlp_ratio=4.,
-                                    qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-8))
-            aggregation.append(blk)
-        self.aggregation = nn.ModuleList(aggregation)
-        self.prototype_token = nn.ParameterList([nn.Parameter(torch.randn(inp_num, embed_dim))])
 
     def gather_loss(self, query, keys,mask=None):
         self.distribution = 1. - F.cosine_similarity(query.unsqueeze(2), keys.unsqueeze(1), dim=-1)
@@ -186,7 +183,7 @@ class GLASS(torch.nn.Module):
         return gather_loss
 
     def get_embed_optim(self):
-        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(wtu.ChainModel([self.forward_modules,self.aggregation,self.prototype_token]),
+        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.forward_modules,
         return_unused=True)
         optimizer = torch.optim.AdamW(
                 weights,
@@ -230,6 +227,18 @@ class GLASS(torch.nn.Module):
 
     def get_score(self,f1,pauroc):
         return (f1*self.f1_w+pauroc*self.pauroc_w)/self.sum_w
+    
+    def call_pre_projection(self,in_data,mask=None,return_loss=None):
+        x,shape = in_data
+        shape = shape[0]
+        C = x.shape[-1]
+        B = x.shape[0]//(shape[0]*shape[1])
+        shape = [B,C,shape[0],shape[1]]
+        raw_x = self.forward_modules.raw_fea
+        if return_loss is None:
+            return_loss = self.training
+        outputs = self.pre_projection(x,raw_x,shape,mask,return_loss=return_loss)
+        return outputs
 
     def trainer(self, training_data, val_data, base_training_data,name):
         print(self)
@@ -328,7 +337,7 @@ class GLASS(torch.nn.Module):
                             img = data["image"]
                             img = img.to(torch.float).to(self.device)
                             if self.pre_proj > 0: #True
-                                outputs = self.pre_projection(self._embed(img, evaluation=False)[0])
+                                outputs = self.call_pre_projection(self._embed(img, evaluation=False),return_loss=False)
                                 outputs = outputs[0] if len(outputs) == 2 else outputs
                             else:
                                 outputs = self._embed(img, evaluation=False)[0]
@@ -456,9 +465,9 @@ class GLASS(torch.nn.Module):
             B = img.shape[0]
             with torch.cuda.amp.autocast():
                 if self.pre_proj > 0:
-                    fake_feats = self.pre_projection(self._embed(aug, evaluation=False)[0])
+                    fake_feats,fake_aid_loss = self.call_pre_projection(self._embed(aug, evaluation=False),mask=data_item["mask_s"])
                     fake_feats = fake_feats[0] if len(fake_feats) == 2 else fake_feats
-                    true_feats = self.pre_projection(self._embed(img, evaluation=False)[0])
+                    true_feats,true_aid_loss = self.call_pre_projection(self._embed(img, evaluation=False))
                     true_feats = true_feats[0] if len(true_feats) == 2 else true_feats
                 else:
                     fake_feats = self._embed(aug, evaluation=False)[0]
@@ -531,17 +540,6 @@ class GLASS(torch.nn.Module):
                 proj_feats = c_f_points if self.svd == 1 else true_points
                 r = r_t if self.svd == 1 else 1
 
-                #####################################################################INP
-                a_f0 = torch.reshape(true_feats,[B,-1,true_feats.shape[-1]])
-                a_f1 = torch.reshape(fake_feats,[B,-1,true_feats.shape[-1]])
-                a_f = torch.cat([a_f0,a_f1],dim=1)
-                mask = torch.cat(torch.zeros_like(mask_s_gt[:,0],mask_s_gt[:,0]))
-                agg_prototype = self.prototype_token[0]
-                for i, blk in enumerate(self.aggregation):
-                    agg_prototype = blk(agg_prototype.unsqueeze(0).repeat((B, 1, 1)), a_f)
-                g_loss = self.gather_loss(a_f, agg_prototype,mask=mask)
-                #####################################################################
-    
                 if self.svd == 1:
                     h = fake_points - proj_feats
                     h_norm = dist_f if self.svd == 1 else torch.norm(h, dim=1)
@@ -566,6 +564,19 @@ class GLASS(torch.nn.Module):
                 
                 model_loss = [true_loss,gaus_loss,focal_loss]
                 info = ""
+                for k,v, in fake_aid_loss.items():
+                    if not torch.isfinite(v):
+                        info += f"fake_aid_{k} is infinite, "
+                    else:
+                        model_loss.append(v)
+                
+                for k,v, in true_aid_loss.items():
+                    if not torch.isfinite(v):
+                        info += f"true_aid_{k} is infinite, "
+                    else:
+                        model_loss.append(v)
+
+
                 if not torch.isfinite(true_loss):
                     info += f"true loss is infinite,"
                 if not torch.isfinite(gaus_loss):
@@ -590,17 +601,20 @@ class GLASS(torch.nn.Module):
                     self.scaler.unscale_(self.proj_opt) #将梯度都除以self.scaler._scale
                     self.total_norm_proj = torch.nn.utils.clip_grad_norm_(self.pre_projection.parameters(), max_norm=self.max_norm, norm_type=2)
                 self.scaler.step(self.proj_opt)
+                self.proj_lr.step()
             if self.train_backbone:
                 if self.max_norm is not None:
                     self.scaler.unscale_(self.backbone_opt) #将梯度都除以self.scaler._scale
                     self.total_norm_backbone= torch.nn.utils.clip_grad_norm_(self.forward_modules.train_parameters(), max_norm=self.max_norm, norm_type=2)
                 self.scaler.step(self.backbone_opt)
+                self.backbone_lr.step()
 
             if self.max_norm is not None:
                 self.scaler.unscale_(self.dsc_opt) #将梯度都除以self.scaler._scale
                 self.total_norm_dsc = torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=self.max_norm, norm_type=2)
             self.scaler.step(self.dsc_opt)
             self.scaler.update()
+            self.dsc_lr.step()
 
             pix_true = torch.concat([fake_scores.detach() * (1 - mask_s_gt), true_scores.detach()])
             pix_fake = torch.concat([fake_scores.detach() * mask_s_gt, gaus_scores.detach()])
@@ -617,6 +631,13 @@ class GLASS(torch.nn.Module):
                 self.logger.logger.add_scalar("focal_loss", focal_loss, self.logger.g_iter)
                 self.logger.logger.add_scalar("gaus_loss", gaus_loss, self.logger.g_iter)
                 self.logger.logger.add_scalar("true_loss", true_loss, self.logger.g_iter)
+                wsummary.log_optimizer(self.logger.logger,self.dsc_opt,self.logger.g_iter,name="dsc_opt")
+                wsummary.log_optimizer(self.logger.logger,self.backbone_opt,self.logger.g_iter,name="backbone_opt")
+                wsummary.log_optimizer(self.logger.logger,self.proj_opt,self.logger.g_iter,name="proj_opt")
+                for k,v in fake_aid_loss.items():
+                    self.logger.logger.add_scalar(f"fake_aid_{k}", v, self.logger.g_iter)
+                for k,v in true_aid_loss.items():
+                    self.logger.logger.add_scalar(f"true_aid_{k}", v, self.logger.g_iter)
 
             if self.logger.g_iter%200 == 0:
                 log_img = wtu.unnormalize(data_item["image"][:3],mean=common.IMAGENET_MEAN*255,std=common.IMAGENET_STD*255)
@@ -882,7 +903,7 @@ class GLASS(torch.nn.Module):
 
             patch_features, patch_shapes = self._embed(img, provide_patch_shapes=True, evaluation=True)
             if self.pre_proj > 0:
-                patch_features = self.pre_projection(patch_features)
+                patch_features = self.call_pre_projection((patch_features,patch_shapes),return_loss=False)
                 patch_features = patch_features[0] if len(patch_features) == 2 else patch_features
 
             patch_scores = image_scores = self.discriminator(patch_features)[0]
