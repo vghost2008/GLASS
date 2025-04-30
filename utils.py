@@ -62,7 +62,9 @@ def distribution_judge(img, name):
 def create_storage_folder(
         main_folder_path, project_folder, group_folder, run_name, mode="iterate"
 ):
-    main_folder_path = osp.join("/home/wj/ai/mldata1/MVTEC/workdir",main_folder_path)
+    if "/" not in main_folder_path:
+        main_folder_path = osp.join("/home/wj/ai/mldata1/MVTEC/workdir",main_folder_path)
+        print(f"Update main folder path to {main_folder_path}")
     os.makedirs(main_folder_path, exist_ok=True)
     save_path = main_folder_path
     return save_path

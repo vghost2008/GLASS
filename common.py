@@ -405,6 +405,7 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
         [m.train(mode=mode) for m in self.lateral_convs]
         [m.train(mode=mode) for m in self.out_convs]
         self.output.train(mode=mode)
+        self.att.train(mode=mode)
         if mode==False:
             self.backbone.eval()
 
