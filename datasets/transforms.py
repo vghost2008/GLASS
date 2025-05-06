@@ -30,6 +30,9 @@ class ColorJitter(nn.Module):
         results['img'] = img
         return results
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(p={self.p})"
+
 class RandomHorizontalFlip(nn.Module):
     def __init__(self, p=0.5):
         super().__init__()
@@ -54,6 +57,9 @@ class RandomHorizontalFlip(nn.Module):
             results['fg_mask'] = F.hflip(fg_mask)
         return results
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(p={self.p})"
+
 class RandomVerticalFlip(nn.Module):
     def __init__(self, p=0.5):
         super().__init__()
@@ -77,6 +83,10 @@ class RandomVerticalFlip(nn.Module):
             fg_mask = results['fg_mask']
             results['fg_mask'] = F.vflip(fg_mask)
         return results
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(p={self.p})"
+
 class RandomGrayscale(transforms.RandomGrayscale):
     def forward(self,results):
         img = results['img']

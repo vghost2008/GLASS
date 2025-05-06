@@ -121,6 +121,14 @@ class MVTecDataset2(torch.utils.data.Dataset):
         self.classname = classname
         self.dataset_name = dataset_name
 
+        if self.classname == "can":
+            h_flip_p = 0
+            v_flip_p = 0
+        elif self.classname == "fruit_jelly":
+            v_flip_p = 0
+        elif self.classname == "vial":
+            v_flip_p = 0
+
         #if self.distribution != 1 and (self.classname == 'toothbrush' or self.classname == 'wood'):
             #self.resize = round(self.imgsize * 329 / 288)
 
