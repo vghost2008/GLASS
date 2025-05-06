@@ -55,7 +55,10 @@ def run(
         os.makedirs(models_dir, exist_ok=True)
         for i, GLASS in enumerate(glass_list):
             GLASS.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name,run_save_path=run_save_path,tb_dir="tb_pred")
-            GLASS.run_predict(dataloaders["predict"], dataloaders["predict"].dataset.classname)
+            try:
+                GLASS.run_predict(dataloaders["predict"], dataloaders["predict"].dataset.classname)
+            except Exception as e:
+                print(f"ERROR: Run {dataset_name} faild, info {e}")
 
 if __name__ == "__main__":
     warnings.filterwarnings('ignore')
