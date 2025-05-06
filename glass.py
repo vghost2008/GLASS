@@ -716,6 +716,7 @@ class GLASS(torch.nn.Module):
             else:
                 pixel_pro = 0.
         else:
+            print(f"ERROR: len(masks_gt)==0")
             pixel_auroc = -1.
             pixel_ap = -1.
             pixel_pro = -1.
