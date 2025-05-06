@@ -199,7 +199,11 @@ def dataset(
         try:
             if len(v)<=2:
                 idx = int(v)
-                subdatasets[i] = all_names[idx]
+                if idx == -1:
+                    subdatasets = all_names
+                    break
+                else:
+                    subdatasets[i] = all_names[idx]
         except Exception as e:
             print(e)
             pass
