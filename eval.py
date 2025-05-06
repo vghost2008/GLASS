@@ -78,7 +78,7 @@ def run(
             all_pauroc.append(p_auroc)
             all_f1.append(best_f1)
 
-    print(f"AUROC: {all_pauroc}, mean: {np.mean(all_pauroc):.4f}, F1: {all_f1}, mean: {np.mean(all_f1):.4f}")
+    print(f"dataset_name: ALL, AUROC: {all_pauroc}, mean: {np.mean(all_pauroc):.4f}, F1: {all_f1}, mean: {np.mean(all_f1):.4f}")
     # save distribution judgment xlsx after all categories
     if len(df['Class']) != 0:
         os.makedirs('./datasets/excel', exist_ok=True)
