@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import math
 from collections.abc import Iterable
+from wml.semantic.basic_toolkit import npresize_mask
 
 def align(v,a):
     return int(math.ceil(v/a)*a)
@@ -17,6 +18,29 @@ def generate_thr(img_shape, min=0, max=4):
     perlin_noise_np = iaa.Sequential([iaa.Affine(rotate=(-90, 90))])(image=perlin_noise_np)
     perlin_thr = np.where(perlin_noise_np > threshold, np.ones_like(perlin_noise_np), np.zeros_like(perlin_noise_np))
     return perlin_thr
+
+def force_get_mask(img_shape,feat_size,mask_fg):
+    mask = np.zeros(feat_size)
+    if len(mask_fg) < 4 or torch.max(mask_fg)<0.5:
+        y = mask.shape[0]//2
+        x = mask.shape[1]//2
+        mask[y,x] = 1
+        mask[y+1,x] = 1
+        mask[y,x+1] = 1
+        mask[y+1,x+1] = 1
+        mask_l = npresize_mask(np.expand_dims(mask,axis=0),(img_shape[1],img_shape[0]))[0]
+        return mask,mask_l 
+    else:
+        mask_fg = mask_fg.cpu().numpy()
+        fg = npresize_mask(np.expand_dims(mask_fg,axis=0),(feat_size[1],feat_size[0]))[0]
+        ys,xs = np.where(fg)
+        ys = ys[:4]
+        xs = xs[:4]
+        for y,x in zip(ys,xs):
+            mask[y,x] = 1
+        mask_l = npresize_mask(np.expand_dims(mask,axis=0),(img_shape[1],img_shape[0]))[0]
+        return mask,mask_l 
+        
 
 
 def perlin_mask(img_shape, feat_size, min, max, mask_fg, flag=0):
@@ -45,6 +69,10 @@ def perlin_mask(img_shape, feat_size, min, max, mask_fg, flag=0):
         max_try_nr -= 1
     if np.max(mask) == 0 and max_try_nr<=0:
         print(f"Get perline mask timeout.")
+        try:
+            return force_get_mask(img_shape[-2:],feat_size,mask_fg)
+        except Exception as e:
+            print(f"ERROR: force get mask faild, {e}")
     mask_s = mask
     if flag != 0:
         mask_l = mask_.numpy()
