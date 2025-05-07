@@ -126,7 +126,7 @@ class Ensemble(nn.Module):
         with torch.no_grad():
             res0 = self.backbone0(x)
             res1 = self.backbone1(x)
-            res1['A'] = res0['0']
+            res1['A'] = res0['0']  #res1['A] -> mask rcnn
         return res1
     
 

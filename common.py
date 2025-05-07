@@ -374,7 +374,7 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
 
         with torch.no_grad():
             outputs = self.backbone(images)
-        base_feature = outputs[self.layers_to_extract_from[0]]
+        base_feature = outputs[self.layers_to_extract_from[0]] #Mask rcnn
         features = [outputs[n] for n in self.layers_to_extract_from[1:]]
         new_features = []
         for f,m in zip(features,self.lateral_convs):
