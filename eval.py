@@ -14,6 +14,7 @@ import numpy as np
 import time
 import wml.wtorch.train_toolkit as wtt
 from base_runner import *
+from datadef import get_class_name,set_class_name
 
 @main.result_callback()
 def run(
@@ -57,6 +58,7 @@ def run(
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             )
         )
+        set_class_name(dataloaders["training"].dataset.classname)
 
         models_dir = os.path.join(run_save_path, "models")
         os.makedirs(models_dir, exist_ok=True)

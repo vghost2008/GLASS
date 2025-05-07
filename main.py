@@ -13,6 +13,7 @@ import utils
 import numpy as np
 import time
 from base_runner import *
+from datadef import get_class_name, set_class_name
 
 
 
@@ -47,6 +48,8 @@ def run(
         dataset_name = dataloaders["training"].name
         imagesize = dataloaders["training"].dataset.imagesize
         glass_list = methods["get_glass"](imagesize, device)
+        set_class_name(dataloaders["training"].dataset.classname)
+
 
         LOGGER.info(
             "Selecting dataset [{}] ({}/{}) {}".format(

@@ -124,10 +124,12 @@ class MVTecDataset2(torch.utils.data.Dataset):
         if self.classname == "can":
             h_flip_p = 0
             v_flip_p = 0
+        '''
         elif self.classname == "fruit_jelly":
             v_flip_p = 0
         elif self.classname == "vial":
             v_flip_p = 0
+        '''
 
         #if self.distribution != 1 and (self.classname == 'toothbrush' or self.classname == 'wood'):
             #self.resize = round(self.imgsize * 329 / 288)
@@ -151,7 +153,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         if split == DatasetSplit.TRAIN:
             self.transform_img = [
                 Resize(self.resize),
-                ColorJitter(p=0.2),
+                ColorJitter(p=0.3,p2=0.5),
                 RandomHorizontalFlip(h_flip_p),
                 RandomVerticalFlip(v_flip_p),
                 RandomGrayscale(gray_p),

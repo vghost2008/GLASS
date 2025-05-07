@@ -28,6 +28,7 @@ import wml.img_utils as wmli
 import colorama
 import time
 from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
+from datadef import get_class_name
 
 def trace_grad_fn(grad_fn, depth=0):
     if grad_fn is None:
@@ -688,6 +689,19 @@ class GLASS(torch.nn.Module):
 
             if 'forward_modules' in state_dict:
                 self.forward_modules.load_state_dict(state_dict['forward_modules'])
+
+
+            try:
+                if isinstance(hasattr(self.forward_modules,"att")):
+                    #weights = torch.sigmoid(self.forward_modules.att.weights).cpu().detach().numpy().tolist()
+                    weights = torch.sigmoid(self.forward_modules.att.weights).cpu().detach().numpy()
+                    nr = len(weights)//2
+                    print(f"{get_class_name()} forward_module.att weights")
+                    wmlu.show_nparray(weights[:nr])
+                    wmlu.show_nparray(weights[nr:])
+                    print(f"Mean: {np.mean(weights[:nr])}, {np.mean(weights[nr:])}")
+            except:
+                pass
             
             return ckpt_path[0]
         else:

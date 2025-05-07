@@ -11,6 +11,7 @@ import backbones
 import glass
 import utils
 from base_runner import *
+from datadef import set_class_name, get_class_name
 
 
 
@@ -41,6 +42,8 @@ def run(
         dataset_name = dataloaders["predict"].name
         imagesize = dataloaders["predict"].dataset.imagesize
         glass_list = methods["get_glass"](imagesize, device)
+        set_class_name(dataloaders["predict"].dataset.classname)
+
 
         LOGGER.info(
             "Selecting dataset [{}] ({}/{}) {}".format(
