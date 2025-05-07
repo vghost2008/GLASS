@@ -692,7 +692,7 @@ class GLASS(torch.nn.Module):
 
 
             try:
-                if isinstance(hasattr(self.forward_modules,"att")):
+                if hasattr(self.forward_modules,"att"):
                     #weights = torch.sigmoid(self.forward_modules.att.weights).cpu().detach().numpy().tolist()
                     weights = torch.sigmoid(self.forward_modules.att.weights).cpu().detach().numpy()
                     nr = len(weights)//2
@@ -700,7 +700,10 @@ class GLASS(torch.nn.Module):
                     wmlu.show_nparray(weights[:nr])
                     wmlu.show_nparray(weights[nr:])
                     print(f"Mean: {np.mean(weights[:nr])}, {np.mean(weights[nr:])}")
-            except:
+                else:
+                    print(f"No att.")
+            except Exception as e:
+                print(f"ERROR: {e}")
                 pass
             
             return ckpt_path[0]
