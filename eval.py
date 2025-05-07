@@ -46,6 +46,7 @@ def run(
     all_f1 = []
     for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
         #utils.fix_seeds(seed, device)
+        set_class_name(dataloaders["training"].dataset.classname)
         dataset_name = dataloaders["training"].name
         imagesize = dataloaders["training"].dataset.imagesize
         glass_list = methods["get_glass"](imagesize, device)
@@ -58,7 +59,6 @@ def run(
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             )
         )
-        set_class_name(dataloaders["training"].dataset.classname)
 
         models_dir = os.path.join(run_save_path, "models")
         os.makedirs(models_dir, exist_ok=True)

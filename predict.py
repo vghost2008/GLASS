@@ -39,10 +39,10 @@ def run(
 
     for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
         utils.fix_seeds(seed, device)
+        set_class_name(dataloaders["predict"].dataset.classname)
         dataset_name = dataloaders["predict"].name
         imagesize = dataloaders["predict"].dataset.imagesize
         glass_list = methods["get_glass"](imagesize, device)
-        set_class_name(dataloaders["predict"].dataset.classname)
 
 
         LOGGER.info(
