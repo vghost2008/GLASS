@@ -692,14 +692,15 @@ class GLASS(torch.nn.Module):
 
 
             try:
-                if isinstance(hasattr(self.forward_modules,"att")):
+                if hasattr(self.forward_modules,"att"):
                     #weights = torch.sigmoid(self.forward_modules.att.weights).cpu().detach().numpy().tolist()
                     weights = torch.sigmoid(self.forward_modules.att.weights).cpu().detach().numpy()
-                    nr = len(weights)//2
+                    nr = len(weights)//3
                     print(f"{get_class_name()} forward_module.att weights")
                     wmlu.show_nparray(weights[:nr])
-                    wmlu.show_nparray(weights[nr:])
-                    print(f"Mean: {np.mean(weights[:nr])}, {np.mean(weights[nr:])}")
+                    wmlu.show_nparray(weights[nr:2*nr])
+                    wmlu.show_nparray(weights[2*nr:])
+                    print(f"Mean: {np.mean(weights[:nr])}, {np.mean(weights[nr:2*nr])}, {np.mean(weights[2*nr:])}")
             except:
                 pass
             
