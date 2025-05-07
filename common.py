@@ -11,6 +11,7 @@ import tensorrt as trt
 from wml.wtorch.nn import MParent,WeakRefmodel
 import wml.wtorch.nn as wnn
 import wml.wml_utils as wmlu
+from datadef import get_class_name, ALL_CLASS_NAMES
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406])
 IMAGENET_STD = np.array([0.229, 0.224, 0.225])
@@ -314,10 +315,20 @@ class NetworkFeatureAggregatorV3(NetworkFeatureAggregator):
         return res
 
 class FeatureAttenation(nn.Module):
-    def __init__(self,channels_nr):
+    def __init__(self,dino_channels_nr=512,mrcnn_channels_nr=256):
         super().__init__()
-        self.weights = nn.Parameter(torch.ones([channels_nr])*100)
-        self.norm = wnn.LayerNorm(channels_nr)
+        classname = get_class_name()
+        assert classname in ALL_CLASS_NAMES, f"ERROR classname {classname}"
+        if classname in ["fabric"  , "fruit_jelly"  , "rice"  , "sheet_metal"]:
+            s0 = torch.ones([dino_channels_nr])*3
+            s1 = torch.ones([mrcnn_channels_nr])*(-3)
+            s = torch.cat([s0,s1],dim=0)
+        elif classname  in ["vial"  , "wallplugs"  , "walnuts", "can"]:
+            s0 = torch.ones([dino_channels_nr])*(-3)
+            s1 = torch.ones([mrcnn_channels_nr])*3
+            s = torch.cat([s0,s1],dim=0)
+        self.weights = nn.Parameter(s)
+        self.norm = wnn.LayerNorm(dino_channels_nr+mrcnn_channels_nr)
         self.grad_scale = wnn.GradScale(0.05)
 
     def forward(self,x):
@@ -349,7 +360,7 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
 
         self.out_convs.append(ConvModule(256,256,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01)))
         self.output = ConvModule(channels*2+256,channels*2,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01))
-        self.att = FeatureAttenation(channels*2)
+        self.att = FeatureAttenation(channels*2,256)
         wtt.set_bn_eps(self.lateral_convs,1e-3)
         wtt.set_bn_eps(self.out_convs,1e-3)
         wtt.set_bn_eps(self.output,1e-3)
@@ -395,8 +406,8 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
         base_feature = self.out_convs[2](base_feature)
 
         feature = torch.cat([first_feature,second_feature,base_feature],dim=1)
-        feature = self.output(feature)
         feature = self.att(feature)
+        feature = self.output(feature)
 
         shapes = []
         shapes.append(feature.shape[-2:])
