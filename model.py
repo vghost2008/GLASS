@@ -1,4 +1,5 @@
 import torch
+from wml.wtorch import ConvModule
 
 
 def init_weight(m):
@@ -14,29 +15,28 @@ def init_weight(m):
 class Discriminator(torch.nn.Module):
     def __init__(self, in_planes, n_layers=2, hidden=None):
         super(Discriminator, self).__init__()
-
-        _hidden = in_planes if hidden is None else hidden
+        self.img_shape = None
+        _hidden = 512
         self.body = torch.nn.Sequential()
-        for i in range(n_layers - 1):
+        for i in range(3):
             _in = in_planes if i == 0 else _hidden
-            _hidden = int(_hidden // 1.5) if hidden is None else hidden
             self.body.add_module('block%d' % (i + 1),
-                                 torch.nn.Sequential(
-                                     torch.nn.Linear(_in, _hidden),
-                                     torch.nn.BatchNorm1d(_hidden,eps=1e-3),
-                                     #torch.nn.LeakyReLU(0.2)
-                                     torch.nn.SiLU(),
-                                 ))
-        #self.tail = torch.nn.Sequential(torch.nn.Linear(_hidden, 1, bias=False),
-        #                                torch.nn.Sigmoid())
-        self.tail = torch.nn.Linear(_hidden, 1, bias=False)
+                                     ConvModule(_in,_hidden,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01))
+                                 )
+        self.tail = torch.nn.Conv2d(_hidden, 1, 1,1,bias=False)
         self.sigmoid = torch.nn.Sigmoid()
         self.apply(init_weight)
 
     def forward(self, x):
+        B,_,H,W = self.img_shape
+        C = x.shape[-1]
         with torch.cuda.amp.autocast(False):
+            x = torch.reshape(x,[B,H//4,W//4,C])
+            x = torch.permute(x,[0,3,1,2])
             x = self.body(x.float())
             x = self.tail(x)
+            x = torch.permute(x,[0,2,3,1])
+            x = torch.reshape(x,[-1,1])
             score = self.sigmoid(x)
         return score,x
 

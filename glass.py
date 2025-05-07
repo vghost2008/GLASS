@@ -29,6 +29,7 @@ import colorama
 import time
 from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
 from datadef import get_class_name
+import traceback
 
 def trace_grad_fn(grad_fn, depth=0):
     if grad_fn is None:
@@ -332,7 +333,11 @@ class GLASS(torch.nn.Module):
                             os.remove(ckpt_path_cur)
                         torch.save(state_dict, ckpt_path_cur)
                 except Exception as e:
-                    print(f"ERROR: {e}")
+                    print(f"ERROR A: {e}")
+                    #stack_info = traceback.format_stack()
+                    #print("\n".join(stack_info))
+                    traceback.print_exc()
+
     
                 if (i_epoch + self.eval_offset) % self.eval_epochs == 0:
                     print(f"\nBegin eval...")
@@ -407,7 +412,10 @@ class GLASS(torch.nn.Module):
                         min_error_nr = 0
                     except Exception as e:
                         pass
-                print(colorama.Fore.RED+f"ERROR:{e}"+colorama.Style.RESET_ALL)
+                print(colorama.Fore.RED+f"ERROR B:{e}"+colorama.Style.RESET_ALL)
+                traceback.print_exc()
+                #stack_info = traceback.format_stack()
+                #print("\n".join(stack_info))
         return best_record
 
     def _train_discriminator_amp(self, input_data, cur_epoch, pbar, pbar_str1):
@@ -419,212 +427,223 @@ class GLASS(torch.nn.Module):
         all_loss, all_p_true, all_p_fake, all_r_t, all_r_g, all_r_f = [], [], [], [], [], []
         sample_num = 0
         tda_error_nr = 0
+        min_error = 10
         for i_iter, data_item in enumerate(input_data):
-            self.dsc_opt.zero_grad()
-            if self.pre_proj > 0:
-                self.proj_opt.zero_grad()
-            if self.train_backbone:
-                self.backbone_opt.zero_grad()
-
-            aug = data_item["aug"]
-            aug = aug.to(torch.float).to(self.device)
-            img = data_item["image"]
-            img = img.to(torch.float).to(self.device)
-            with torch.cuda.amp.autocast():
+            try:
+                self.dsc_opt.zero_grad()
                 if self.pre_proj > 0:
-                    fake_feats = self.pre_projection(self._embed(aug, evaluation=False)[0])
-                    fake_feats = fake_feats[0] if len(fake_feats) == 2 else fake_feats
-                    true_feats = self.pre_projection(self._embed(img, evaluation=False)[0])
-                    true_feats = true_feats[0] if len(true_feats) == 2 else true_feats
-                else:
-                    fake_feats = self._embed(aug, evaluation=False)[0]
-                    fake_feats.requires_grad = True
-                    true_feats = self._embed(img, evaluation=False)[0]
-                    true_feats.requires_grad = True
-
-                mask_s_gt = data_item["mask_s"].reshape(-1, 1).to(self.device)
-                noise = torch.normal(0, self.noise, true_feats.shape).to(self.device)
-                gaus_feats = true_feats + noise.to(true_feats.dtype)
+                    self.proj_opt.zero_grad()
+                if self.train_backbone:
+                    self.backbone_opt.zero_grad()
     
-                center = self.c.repeat(img.shape[0], 1, 1)
-                center = center.reshape(-1, center.shape[-1])
-                true_points = torch.concat([fake_feats[mask_s_gt[:, 0] == 0], true_feats], dim=0)
-                c_t_points = torch.concat([center[mask_s_gt[:, 0] == 0], center], dim=0)
-                dist_t = torch.norm(true_points - c_t_points, dim=1)
-                r_t = torch.tensor([torch.quantile(dist_t, q=self.radius)]).to(self.device)
+                aug = data_item["aug"]
+                aug = aug.to(torch.float).to(self.device)
+                img = data_item["image"]
+                img = img.to(torch.float).to(self.device)
+                self.discriminator.img_shape = img.shape
+                with torch.cuda.amp.autocast():
+                    if self.pre_proj > 0:
+                        fake_feats = self.pre_projection(self._embed(aug, evaluation=False)[0])
+                        fake_feats = fake_feats[0] if len(fake_feats) == 2 else fake_feats
+                        true_feats = self.pre_projection(self._embed(img, evaluation=False)[0])
+                        true_feats = true_feats[0] if len(true_feats) == 2 else true_feats
+                    else:
+                        fake_feats = self._embed(aug, evaluation=False)[0]
+                        fake_feats.requires_grad = True
+                        true_feats = self._embed(img, evaluation=False)[0]
+                        true_feats.requires_grad = True
     
-                for step in range(self.step + 1):
-                    gaus_feats = torch.tensor(gaus_feats.detach(),requires_grad=True)
-                    gaus_scores,gaus_logits_scores = self.discriminator(gaus_feats)
-                    #true_scores = scores[:len(true_feats)]
-                    #true_logits_scores = logits[:len(true_feats)]
-                    with torch.cuda.amp.autocast(enabled=False):
-                        gaus_loss = torch.nn.BCEWithLogitsLoss()(gaus_logits_scores.float(), torch.ones_like(gaus_scores.float()))
-    
-                    if step == self.step:
-                        break
-                    elif self.mining == 0:
-                        dist_g = torch.norm(gaus_feats - center, dim=1)
-                        r_g = torch.tensor([torch.quantile(dist_g, q=self.radius)]).to(self.device)
-                        break
-    
-                    grad = torch.autograd.grad(gaus_loss, [gaus_feats])[0].float()
-                    grad_norm = torch.norm(grad, dim=1)
-                    grad_norm = grad_norm.view(-1, 1)
-                    grad_normalized = grad / (grad_norm + 1e-10)
-    
-                    with torch.no_grad():
-                        gaus_feats.add_(0.001 * grad_normalized)
-    
-                    if (step + 1) % 5 == 0:
-                        dist_g = torch.norm(gaus_feats - center, dim=1)
-                        r_g = torch.tensor([torch.quantile(dist_g, q=self.radius)]).to(self.device)
-                        proj_feats = center if self.svd == 1 else true_feats
-                        r = r_t if self.svd == 1 else 0.5
-    
-                        h = gaus_feats - proj_feats
-                        h_norm = dist_g if self.svd == 1 else torch.norm(h, dim=1)
-                        alpha = torch.clamp(h_norm, r, 2 * r)
+                    mask_s_gt = data_item["mask_s"].reshape(-1, 1).to(self.device)
+                    noise = torch.normal(0, self.noise, true_feats.shape).to(self.device)
+                    gaus_feats = true_feats + noise.to(true_feats.dtype)
+        
+                    center = self.c.repeat(img.shape[0], 1, 1)
+                    center = center.reshape(-1, center.shape[-1])
+                    true_points = torch.concat([fake_feats[mask_s_gt[:, 0] == 0], true_feats], dim=0)
+                    c_t_points = torch.concat([center[mask_s_gt[:, 0] == 0], center], dim=0)
+                    dist_t = torch.norm(true_points - c_t_points, dim=1)
+                    r_t = torch.tensor([torch.quantile(dist_t, q=self.radius)]).to(self.device)
+        
+                    for step in range(self.step + 1):
+                        gaus_feats = torch.tensor(gaus_feats.detach(),requires_grad=True)
+                        gaus_scores,gaus_logits_scores = self.discriminator(gaus_feats)
+                        #true_scores = scores[:len(true_feats)]
+                        #true_logits_scores = logits[:len(true_feats)]
+                        with torch.cuda.amp.autocast(enabled=False):
+                            gaus_loss = torch.nn.BCEWithLogitsLoss()(gaus_logits_scores.float(), torch.ones_like(gaus_scores.float()))
+        
+                        if step == self.step:
+                            break
+                        elif self.mining == 0:
+                            dist_g = torch.norm(gaus_feats - center, dim=1)
+                            r_g = torch.tensor([torch.quantile(dist_g, q=self.radius)]).to(self.device)
+                            break
+        
+                        grad = torch.autograd.grad(gaus_loss, [gaus_feats])[0].float()
+                        grad_norm = torch.norm(grad, dim=1)
+                        grad_norm = grad_norm.view(-1, 1)
+                        grad_normalized = grad / (grad_norm + 1e-10)
+        
+                        with torch.no_grad():
+                            gaus_feats.add_(0.001 * grad_normalized)
+        
+                        if (step + 1) % 5 == 0:
+                            dist_g = torch.norm(gaus_feats - center, dim=1)
+                            r_g = torch.tensor([torch.quantile(dist_g, q=self.radius)]).to(self.device)
+                            proj_feats = center if self.svd == 1 else true_feats
+                            r = r_t if self.svd == 1 else 0.5
+        
+                            h = gaus_feats - proj_feats
+                            h_norm = dist_g if self.svd == 1 else torch.norm(h, dim=1)
+                            alpha = torch.clamp(h_norm, r, 2 * r)
+                            proj = (alpha / (h_norm + 1e-10)).view(-1, 1)
+                            h = proj * h
+                            gaus_feats = proj_feats + h # gaus_feats将处理离proj_feats, [r,2r]的范围内
+        
+                    if True:
+                        true_scores,true_logits_scores = self.discriminator(true_feats)
+                        #true_scores = scores[:len(true_feats)]
+                        #gaus_scores = scores[len(true_feats):]
+                        #true_logits_scores = logits[:len(true_feats)]
+                        #gaus_logits_scores = logits[len(true_feats):]
+                        with torch.cuda.amp.autocast(enabled=False):
+                            true_loss = torch.nn.BCEWithLogitsLoss()(true_logits_scores.float(), torch.zeros_like(true_scores.float()))
+                        #bce_loss = true_loss + gaus_loss
+        
+                    fake_points = fake_feats[mask_s_gt[:, 0] == 1]
+                    true_points = true_feats[mask_s_gt[:, 0] == 1]
+                    c_f_points = center[mask_s_gt[:, 0] == 1]
+                    dist_f = torch.norm(fake_points - c_f_points, dim=1)
+                    r_f = torch.tensor([torch.quantile(dist_f, q=self.radius)]).to(self.device)
+                    proj_feats = c_f_points if self.svd == 1 else true_points
+                    r = r_t if self.svd == 1 else 1
+        
+                    if self.svd == 1:
+                        h = fake_points - proj_feats
+                        h_norm = dist_f if self.svd == 1 else torch.norm(h, dim=1)
+                        alpha = torch.clamp(h_norm, 2 * r, 4 * r)
                         proj = (alpha / (h_norm + 1e-10)).view(-1, 1)
                         h = proj * h
-                        gaus_feats = proj_feats + h # gaus_feats将处理离proj_feats, [r,2r]的范围内
-    
-                if True:
-                    true_scores,true_logits_scores = self.discriminator(true_feats)
-                    #true_scores = scores[:len(true_feats)]
-                    #gaus_scores = scores[len(true_feats):]
-                    #true_logits_scores = logits[:len(true_feats)]
-                    #gaus_logits_scores = logits[len(true_feats):]
+                        fake_points = proj_feats + h
+                        fake_feats[mask_s_gt[:, 0] == 1] = fake_points.to(fake_feats.dtype)
+        
+                    fake_scores,_ = self.discriminator(fake_feats)
+                    if self.p > 0:
+                        fake_dist = (fake_scores - mask_s_gt) ** 2
+                        d_hard = torch.quantile(fake_dist, q=self.p)
+                        fake_scores_ = fake_scores[fake_dist >= d_hard].unsqueeze(1)  #使用最难预测的1-self.p的数据点
+                        mask_ = mask_s_gt[fake_dist >= d_hard].unsqueeze(1)
+                    else:
+                        fake_scores_ = fake_scores
+                        mask_ = mask_s_gt
+                    output = torch.cat([1 - fake_scores_, fake_scores_], dim=1)
                     with torch.cuda.amp.autocast(enabled=False):
-                        true_loss = torch.nn.BCEWithLogitsLoss()(true_logits_scores.float(), torch.zeros_like(true_scores.float()))
-                    #bce_loss = true_loss + gaus_loss
+                        focal_loss = self.focal_loss(output.float(), mask_.float())*10
+                    
+                    model_loss = [true_loss,gaus_loss,focal_loss]
+                    info = ""
+                    if not torch.isfinite(true_loss):
+                        info += f"true loss is infinite,"
+                    if not torch.isfinite(gaus_loss):
+                        info += f"gaus loss is infinite,"
+                    if not torch.isfinite(focal_loss):
+                        info += f"focal loss is infinite,"
+                    model_loss = list(filter(torch.isfinite,model_loss))
+                    if len(model_loss) == 0:
+                        print(info)
+                        tda_error_nr += 1
+                        if tda_error_nr >= 5:
+                            raise RuntimeError(f"Too many NaN loss error.")
+                            return None,0,0
+                    if len(model_loss)!=3:
+                        print(info)
     
-                fake_points = fake_feats[mask_s_gt[:, 0] == 1]
-                true_points = true_feats[mask_s_gt[:, 0] == 1]
-                c_f_points = center[mask_s_gt[:, 0] == 1]
-                dist_f = torch.norm(fake_points - c_f_points, dim=1)
-                r_f = torch.tensor([torch.quantile(dist_f, q=self.radius)]).to(self.device)
-                proj_feats = c_f_points if self.svd == 1 else true_points
-                r = r_t if self.svd == 1 else 1
+                    loss = sum(model_loss)
     
-                if self.svd == 1:
-                    h = fake_points - proj_feats
-                    h_norm = dist_f if self.svd == 1 else torch.norm(h, dim=1)
-                    alpha = torch.clamp(h_norm, 2 * r, 4 * r)
-                    proj = (alpha / (h_norm + 1e-10)).view(-1, 1)
-                    h = proj * h
-                    fake_points = proj_feats + h
-                    fake_feats[mask_s_gt[:, 0] == 1] = fake_points.to(fake_feats.dtype)
+                self.scaler.scale(loss).backward()
+                if self.pre_proj > 0:
+                    if self.max_norm is not None:
+                        self.scaler.unscale_(self.proj_opt) #将梯度都除以self.scaler._scale
+                        self.total_norm_proj = torch.nn.utils.clip_grad_norm_(self.pre_projection.parameters(), max_norm=self.max_norm, norm_type=2)
+                    self.scaler.step(self.proj_opt)
+                if self.train_backbone:
+                    if self.max_norm is not None:
+                        self.scaler.unscale_(self.backbone_opt) #将梯度都除以self.scaler._scale
+                        self.total_norm_backbone= torch.nn.utils.clip_grad_norm_(self.forward_modules.train_parameters(), max_norm=self.max_norm, norm_type=2)
+                    self.scaler.step(self.backbone_opt)
     
-                fake_scores,_ = self.discriminator(fake_feats)
-                if self.p > 0:
-                    fake_dist = (fake_scores - mask_s_gt) ** 2
-                    d_hard = torch.quantile(fake_dist, q=self.p)
-                    fake_scores_ = fake_scores[fake_dist >= d_hard].unsqueeze(1)  #使用最难预测的1-self.p的数据点
-                    mask_ = mask_s_gt[fake_dist >= d_hard].unsqueeze(1)
-                else:
-                    fake_scores_ = fake_scores
-                    mask_ = mask_s_gt
-                output = torch.cat([1 - fake_scores_, fake_scores_], dim=1)
-                with torch.cuda.amp.autocast(enabled=False):
-                    focal_loss = self.focal_loss(output.float(), mask_.float())*10
-                
-                model_loss = [true_loss,gaus_loss,focal_loss]
-                info = ""
-                if not torch.isfinite(true_loss):
-                    info += f"true loss is infinite,"
-                if not torch.isfinite(gaus_loss):
-                    info += f"gaus loss is infinite,"
-                if not torch.isfinite(focal_loss):
-                    info += f"focal loss is infinite,"
-                model_loss = list(filter(torch.isfinite,model_loss))
-                if len(model_loss) == 0:
-                    print(info)
-                    tda_error_nr += 1
-                    if tda_error_nr >= 5:
-                        raise RuntimeError(f"Too many NaN loss error.")
-                        return None,0,0
-                if len(model_loss)!=3:
-                    print(info)
-
-                loss = sum(model_loss)
-
-            self.scaler.scale(loss).backward()
-            if self.pre_proj > 0:
                 if self.max_norm is not None:
-                    self.scaler.unscale_(self.proj_opt) #将梯度都除以self.scaler._scale
-                    self.total_norm_proj = torch.nn.utils.clip_grad_norm_(self.pre_projection.parameters(), max_norm=self.max_norm, norm_type=2)
-                self.scaler.step(self.proj_opt)
-            if self.train_backbone:
-                if self.max_norm is not None:
-                    self.scaler.unscale_(self.backbone_opt) #将梯度都除以self.scaler._scale
-                    self.total_norm_backbone= torch.nn.utils.clip_grad_norm_(self.forward_modules.train_parameters(), max_norm=self.max_norm, norm_type=2)
-                self.scaler.step(self.backbone_opt)
-
-            if self.max_norm is not None:
-                self.scaler.unscale_(self.dsc_opt) #将梯度都除以self.scaler._scale
-                self.total_norm_dsc = torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=self.max_norm, norm_type=2)
-            self.scaler.step(self.dsc_opt)
-            self.scaler.update()
-
-            pix_true = torch.concat([fake_scores.detach() * (1 - mask_s_gt), true_scores.detach()])
-            pix_fake = torch.concat([fake_scores.detach() * mask_s_gt, gaus_scores.detach()])
-            p_true = ((pix_true < self.dsc_margin).sum() - (pix_true == 0).sum()) / ((mask_s_gt == 0).sum() + true_scores.shape[0])
-            p_fake = (pix_fake >= self.dsc_margin).sum() / ((mask_s_gt == 1).sum() + gaus_scores.shape[0])
-
-            if self.logger.g_iter%10 == 0:
-                self.logger.logger.add_scalar(f"p_true", p_true, self.logger.g_iter)
-                self.logger.logger.add_scalar(f"p_fake", p_fake, self.logger.g_iter)
-                self.logger.logger.add_scalar(f"r_t", r_t, self.logger.g_iter)
-                self.logger.logger.add_scalar(f"r_g", r_g, self.logger.g_iter)
-                self.logger.logger.add_scalar(f"r_f", r_f, self.logger.g_iter)
-                self.logger.logger.add_scalar("loss", loss, self.logger.g_iter)
-                self.logger.logger.add_scalar("focal_loss", focal_loss, self.logger.g_iter)
-                self.logger.logger.add_scalar("gaus_loss", gaus_loss, self.logger.g_iter)
-                self.logger.logger.add_scalar("true_loss", true_loss, self.logger.g_iter)
-
-            if self.logger.g_iter%200 == 0:
-                log_img = wtu.unnormalize(data_item["image"][:3],mean=common.IMAGENET_MEAN*255,std=common.IMAGENET_STD*255)
-                self.logger.logger.add_images("input",log_img.to(torch.uint8),self.logger.g_iter)
-                log_img = wtu.unnormalize(data_item["aug"][:3],mean=common.IMAGENET_MEAN*255,std=common.IMAGENET_STD*255)
-                self.logger.logger.add_images("aug",log_img.to(torch.uint8),self.logger.g_iter)
-                log_img = torch.unsqueeze(data_item["mask_s"][:3],1)*200
-                self.logger.logger.add_images("mask_s",log_img.to(torch.uint8),self.logger.g_iter)
-                wsummary.log_all_variable(self.logger.logger,self,global_step=self.logger.g_iter)
-            self.logger.step()
-
-            all_loss.append(loss.detach().cpu().item())
-            all_p_true.append(p_true.cpu().item())
-            all_p_fake.append(p_fake.cpu().item())
-            all_r_t.append(r_t.cpu().item())
-            all_r_g.append(r_g.cpu().item())
-            all_r_f.append(r_f.cpu().item())
-
-            all_loss_ = np.mean(all_loss)
-            all_p_true_ = np.mean(all_p_true)
-            all_p_fake_ = np.mean(all_p_fake)
-            all_r_t_ = np.mean(all_r_t)
-            all_r_g_ = np.mean(all_r_g)
-            all_r_f_ = np.mean(all_r_f)
-            sample_num = sample_num + img.shape[0]
-
-            pbar_str = f"{input_data.dataset.classname}: epoch:{cur_epoch} loss:{all_loss_:.2e}"
-            pbar_str += f" pt:{all_p_true_ * 100:.2f}"
-            pbar_str += f" pf:{all_p_fake_ * 100:.2f}"
-            pbar_str += f" rt:{all_r_t_:.2f}"
-            pbar_str += f" rg:{all_r_g_:.2f}"
-            pbar_str += f" rf:{all_r_f_:.2f}"
-            pbar_str += f" svd:{self.svd}"
-            pbar_str += f" sample:{sample_num}"
-            pbar_str2 = pbar_str
-            pbar_str += pbar_str1
-            if self.logger.g_iter % 10 == 1:
-                pbar.set_description_str(pbar_str)
-
-            tda_error_nr = 0
-
-            if sample_num > self.limit:
-                break
+                    self.scaler.unscale_(self.dsc_opt) #将梯度都除以self.scaler._scale
+                    self.total_norm_dsc = torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=self.max_norm, norm_type=2)
+                self.scaler.step(self.dsc_opt)
+                self.scaler.update()
+    
+                pix_true = torch.concat([fake_scores.detach() * (1 - mask_s_gt), true_scores.detach()])
+                pix_fake = torch.concat([fake_scores.detach() * mask_s_gt, gaus_scores.detach()])
+                p_true = ((pix_true < self.dsc_margin).sum() - (pix_true == 0).sum()) / ((mask_s_gt == 0).sum() + true_scores.shape[0])
+                p_fake = (pix_fake >= self.dsc_margin).sum() / ((mask_s_gt == 1).sum() + gaus_scores.shape[0])
+    
+                if self.logger.g_iter%10 == 0:
+                    self.logger.logger.add_scalar(f"p_true", p_true, self.logger.g_iter)
+                    self.logger.logger.add_scalar(f"p_fake", p_fake, self.logger.g_iter)
+                    self.logger.logger.add_scalar(f"r_t", r_t, self.logger.g_iter)
+                    self.logger.logger.add_scalar(f"r_g", r_g, self.logger.g_iter)
+                    self.logger.logger.add_scalar(f"r_f", r_f, self.logger.g_iter)
+                    self.logger.logger.add_scalar("loss", loss, self.logger.g_iter)
+                    self.logger.logger.add_scalar("focal_loss", focal_loss, self.logger.g_iter)
+                    self.logger.logger.add_scalar("gaus_loss", gaus_loss, self.logger.g_iter)
+                    self.logger.logger.add_scalar("true_loss", true_loss, self.logger.g_iter)
+    
+                if self.logger.g_iter%200 == 0:
+                    log_img = wtu.unnormalize(data_item["image"][:3],mean=common.IMAGENET_MEAN*255,std=common.IMAGENET_STD*255)
+                    self.logger.logger.add_images("input",log_img.to(torch.uint8),self.logger.g_iter)
+                    log_img = wtu.unnormalize(data_item["aug"][:3],mean=common.IMAGENET_MEAN*255,std=common.IMAGENET_STD*255)
+                    self.logger.logger.add_images("aug",log_img.to(torch.uint8),self.logger.g_iter)
+                    log_img = torch.unsqueeze(data_item["mask_s"][:3],1)*200
+                    self.logger.logger.add_images("mask_s",log_img.to(torch.uint8),self.logger.g_iter)
+                    wsummary.log_all_variable(self.logger.logger,self,global_step=self.logger.g_iter)
+                self.logger.step()
+    
+                all_loss.append(loss.detach().cpu().item())
+                all_p_true.append(p_true.cpu().item())
+                all_p_fake.append(p_fake.cpu().item())
+                all_r_t.append(r_t.cpu().item())
+                all_r_g.append(r_g.cpu().item())
+                all_r_f.append(r_f.cpu().item())
+    
+                all_loss_ = np.mean(all_loss)
+                all_p_true_ = np.mean(all_p_true)
+                all_p_fake_ = np.mean(all_p_fake)
+                all_r_t_ = np.mean(all_r_t)
+                all_r_g_ = np.mean(all_r_g)
+                all_r_f_ = np.mean(all_r_f)
+                sample_num = sample_num + img.shape[0]
+    
+                pbar_str = f"{input_data.dataset.classname}: epoch:{cur_epoch} loss:{all_loss_:.2e}"
+                pbar_str += f" pt:{all_p_true_ * 100:.2f}"
+                pbar_str += f" pf:{all_p_fake_ * 100:.2f}"
+                pbar_str += f" rt:{all_r_t_:.2f}"
+                pbar_str += f" rg:{all_r_g_:.2f}"
+                pbar_str += f" rf:{all_r_f_:.2f}"
+                pbar_str += f" svd:{self.svd}"
+                pbar_str += f" sample:{sample_num}"
+                pbar_str2 = pbar_str
+                pbar_str += pbar_str1
+                if self.logger.g_iter % 10 == 1:
+                    pbar.set_description_str(pbar_str)
+    
+                tda_error_nr = 0
+    
+                if sample_num > self.limit:
+                    break
+                if min_error>0:
+                    min_error -= 1
+            except Exception as e:
+                print(f"ERROR C: {e}")
+                traceback.print_exc()
+                min_error += 2
+                if min_error>=10:
+                    break
 
         return pbar_str2, all_p_true_, all_p_fake_
 
@@ -857,6 +876,7 @@ class GLASS(torch.nn.Module):
         if self.pre_proj > 0:
             self.pre_projection.eval()
         self.discriminator.eval()
+        self.discriminator.img_shape = img.shape
 
         with torch.no_grad():
 
