@@ -35,6 +35,7 @@ DataLoader = torch.utils.data.DataLoader
 @click.option("--run_name", type=str, default="test")
 @click.option("--test", type=str, default="ckpt")
 @click.option("--ckpt_path", type=str, default=None)
+@click.option("--lpid", type=int, default=-1, show_default=True)
 def main(**kwargs):
     pass
 

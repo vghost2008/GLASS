@@ -13,6 +13,7 @@ import utils
 import numpy as np
 import time
 from base_runner import *
+import wml.wml_utils as wmlu
 from datadef import get_class_name, set_class_name
 
 
@@ -28,7 +29,12 @@ def run(
         run_name,
         test,
         ckpt_path,
+        lpid,
+        *args,
+        **kwargs,
 ):
+    if lpid>1:
+        wmlu.wait_pid_exit(lpid)
     np.random.seed(int(time.time()))
     methods = {key: item for (key, item) in methods}
 

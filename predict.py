@@ -26,6 +26,8 @@ def run(
         run_name,
         test,
         ckpt_path,
+        *args,
+        **kwargs,
 ):
     methods = {key: item for (key, item) in methods}
 
