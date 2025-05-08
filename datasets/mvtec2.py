@@ -61,8 +61,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
             anomaly_source_path='/root/dataset/dtd/images',
             dataset_name='mvtec',
             classname='leather',
-            resize=288,
-            imagesize=288,
+            imgsz = -1,
             split=DatasetSplit.TRAIN,
             rotate_degrees=0,
             translate=0,
@@ -114,9 +113,12 @@ class MVTecDataset2(torch.utils.data.Dataset):
         #self.resize = resize if self.distribution != 1 else [resize, resize]
         s = size_dict[classname]
         down_stride = math.ceil(math.sqrt(s[0]*s[1])/768)
-        self.resize = [align(s[1]//down_stride,align_v),align(s[0]//down_stride,align_v)]
+        if imgsz >1:
+            self.resize = [align(imgsz,align_v),align(imgsz,align_v)]
+        else:
+            self.resize = [align(s[1]//down_stride,align_v),align(s[0]//down_stride,align_v)]
         print(f"Use resize {self.resize} for {classname}, downsample stride {down_stride}")
-        self.imgsize = imagesize
+        self.imgsize = self.resize
         self.imagesize = (3, self.imgsize, self.imgsize)
         self.classname = classname
         self.dataset_name = dataset_name

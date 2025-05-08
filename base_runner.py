@@ -141,6 +141,7 @@ def net(
 @click.option("--num_workers", default=8, type=int, show_default=True)
 @click.option("--resize", default=288, type=int, show_default=True)
 @click.option("--imagesize", default=288, type=int, show_default=True)
+@click.option("--imgsz", default=-1, type=int, show_default=True)
 @click.option("--rotate_degrees", default=0, type=int)
 @click.option("--translate", default=0, type=float)
 @click.option("--scale", default=0.0, type=float)
@@ -166,6 +167,7 @@ def dataset(
         batch_size,
         resize,
         imagesize,
+        imgsz,
         num_workers,
         rotate_degrees,
         translate,
@@ -217,8 +219,7 @@ def dataset(
                 data_path,
                 aug_path,
                 classname=subdataset,
-                resize=resize,
-                imagesize=imagesize,
+                imgsz=imgsz,
                 split=dataset_library.DatasetSplit.TEST,
                 seed=seed,
                 align_v=align,
@@ -239,8 +240,7 @@ def dataset(
                 data_path,
                 aug_path,
                 classname=subdataset,
-                resize=resize,
-                imagesize=imagesize,
+                imgsz=imgsz,
                 split=dataset_library.DatasetSplit.PREDICT,
                 seed=seed,
                 align_v=align,
@@ -263,8 +263,7 @@ def dataset(
                     aug_path,
                     dataset_name=get_name,
                     classname=subdataset,
-                    resize=resize,
-                    imagesize=imagesize,
+                    imgsz=imgsz,
                     split=dataset_library.DatasetSplit.TRAIN,
                     seed=seed,
                     rotate_degrees=rotate_degrees,
@@ -304,8 +303,7 @@ def dataset(
                     aug_path,
                     dataset_name=get_name,
                     classname=subdataset,
-                    resize=resize,
-                    imagesize=imagesize,
+                    imgsz=imgsz,
                     split=dataset_library.DatasetSplit.BASE_TRAIN,
                     seed=seed,
                     rotate_degrees=rotate_degrees,

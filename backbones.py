@@ -12,6 +12,8 @@ from torchvision.models.detection import maskrcnn_resnet50_fpn_v2, MaskRCNN_ResN
 from torchvision.utils import draw_bounding_boxes,draw_segmentation_masks
 from torchvision.transforms.functional import to_pil_image
 from models.vit_encoder import load as dino_load
+from models.image_encoder import ImageEncoderViT
+import wml.wtorch.utils as wtu
 
 _BACKBONES = {
     "alexnet": "models.alexnet(pretrained=True)",
@@ -59,7 +61,14 @@ _BACKBONES = {
     "maskrcnn": 'create_maskrcnn()',
     "dino": 'create_dino()',
     "ensemble": 'create_ensemble()',
+    "vit": 'create_vit()',
 }
+
+def create_vit():
+    backbone = ImageEncoderViT(img_size=768)
+    state_dict = torch.load("./backbones/weights/sam_vit_b_01ec64.pth")
+    wtu.forgiving_state_restore(backbone,state_dict)
+    return backbone
 
 def create_maskrcnn():
     weights = MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT
@@ -137,6 +146,10 @@ def create_ensemble():
     return Ensemble()
 
 def load(name):
+    '''
+    out_info: 存储模型输出的key及通道数
+    out_dict与out_info有重复，可以不设置
+    '''
     backbone = eval(_BACKBONES[name])
     if name == "wideresnet50":
         backbone.out_info = [["layer1","layer2","layer3","layer4"],[256,512,1024,2048]]
