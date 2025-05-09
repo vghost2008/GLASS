@@ -435,6 +435,7 @@ class GLASS(torch.nn.Module):
             aug = aug.to(torch.float).to(self.device)
             img = data_item["image"]
             img = img.to(torch.float).to(self.device)
+            B = img.shape[0]
             with torch.cuda.amp.autocast():
                 if self.pre_proj > 0:
                     fake_feats = self.pre_projection(self._embed(aug, evaluation=False)[0])
@@ -527,6 +528,7 @@ class GLASS(torch.nn.Module):
                     fake_dist = (fake_scores - mask_s_gt) ** 2
                     d_hard = torch.quantile(fake_dist, q=self.p)
                     #fake_scores_ = fake_scores[fake_dist >= d_hard].unsqueeze(1)  #使用最难预测的1-self.p的数据点
+                    #fake_loss_weights = (fake_dist>=d_hard).float()
                     fake_logits_ = fake_logits[fake_dist >= d_hard].unsqueeze(1)
                     mask_ = mask_s_gt[fake_dist >= d_hard].unsqueeze(1)
                 else:
@@ -535,7 +537,8 @@ class GLASS(torch.nn.Module):
                     mask_ = mask_s_gt
                 #output = torch.cat([1 - fake_scores_, fake_scores_], dim=1)
                 with torch.cuda.amp.autocast(enabled=False):
-                    focal_loss = torchvision.ops.sigmoid_focal_loss(inputs=fake_logits_.float(),targets=mask_.float(),alpha=-1,reduction = "mean")*10
+                    #focal_loss = torchvision.ops.sigmoid_focal_loss(inputs=fake_logits_.float(),targets=mask_.float(),alpha=-1,reduction = "mean")*20
+                    focal_loss = wvarifocal_loss(pred=fake_logits_.float(),target=mask_.float(),reduction = "mean")*20
                     #focal_loss = self.focal_loss(output.float(), mask_.float())*10
                 
                 model_loss = [true_loss,gaus_loss,focal_loss]
