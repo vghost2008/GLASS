@@ -52,6 +52,7 @@ class ImageEncoderViT(nn.Module):
             window_size (int): Window size for window attention blocks.
             global_attn_indexes (list): Indexes for blocks using global attention.
         """
+        self.aggregator = "NetworkFeatureAggregatorV5"
         super().__init__()
         self.img_size = img_size
 
@@ -113,7 +114,7 @@ class ImageEncoderViT(nn.Module):
 
         x = self.neck(x.permute(0, 3, 1, 2))
 
-        return x
+        return {'0':x}
 
 
 class Block(nn.Module):

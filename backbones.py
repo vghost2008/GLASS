@@ -65,9 +65,13 @@ _BACKBONES = {
 }
 
 def create_vit():
-    backbone = ImageEncoderViT(img_size=768)
+    backbone = ImageEncoderViT(img_size=1024)
     state_dict = torch.load("./backbones/weights/sam_vit_b_01ec64.pth")
-    wtu.forgiving_state_restore(backbone,state_dict)
+    new_state_dict = {}
+    for k,v in state_dict.items():
+        if k.startswith("image_encoder."):
+            new_state_dict[k[len("image_encoder."):]] = v
+    wtu.forgiving_state_restore(backbone,new_state_dict)
     return backbone
 
 def create_maskrcnn():
@@ -148,7 +152,7 @@ def create_ensemble():
 def load(name):
     '''
     out_info: 存储模型输出的key及通道数
-    out_dict与out_info有重复，可以不设置
+    out_dict与out_info有重复
     '''
     backbone = eval(_BACKBONES[name])
     if name == "wideresnet50":
@@ -164,5 +168,8 @@ def load(name):
     elif name == "ensemble":
         backbone.out_info = [['0','1','2','3','4','5','6','7'],[768]*8]
         backbone.out_dict = ['A','0','1','2','3','4','5','6','7']
+    elif name == "vit":
+        backbone.out_info = [['0'],[256]]
+        backbone.out_dict = backbone.out_info[0]
     
     return backbone

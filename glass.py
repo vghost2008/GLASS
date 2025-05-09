@@ -29,6 +29,7 @@ import colorama
 import time
 from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
 from datadef import get_class_name
+import torchvision
 
 def trace_grad_fn(grad_fn, depth=0):
     if grad_fn is None:
@@ -110,6 +111,10 @@ class GLASS(torch.nn.Module):
             feature_aggregator = common.NetworkFeatureAggregatorV4(
                 self.backbone, self.layers_to_extract_from, self.device, train_backbone
             ).to(device)
+        elif hasattr(self.backbone,"aggregator") and self.backbone.aggregator == "NetworkFeatureAggregatorV5":
+            feature_aggregator = common.NetworkFeatureAggregatorV5(
+                self.backbone, self.layers_to_extract_from, self.device, train_backbone
+            ).to(device)
         else:
             feature_aggregator = common.NetworkFeatureAggregatorV2(
                 self.backbone, self.layers_to_extract_from, self.device, train_backbone
@@ -132,11 +137,11 @@ class GLASS(torch.nn.Module):
             self.proj_opt = torch.optim.Adam(self.pre_projection.parameters(), lr, weight_decay=1e-5)
 
         self.eval_epochs = eval_epochs
-        self.eval_offset = 0
+        self.eval_offset = eval_epochs-1
         if self.eval_epochs<=2:
             print(f"WARNING: eval epochs={self.eval_epochs}")
         else:
-            self.eval_offset = np.random.randint(1,self.eval_epochs)
+            #self.eval_offset = np.random.randint(1,self.eval_epochs)
             print(f"INFO: eval epochs={self.eval_epochs}, eval offset={self.eval_offset}")
         self.dsc_layers = dsc_layers
         self.dsc_hidden = dsc_hidden
@@ -508,6 +513,7 @@ class GLASS(torch.nn.Module):
                 r = r_t if self.svd == 1 else 1
     
                 if self.svd == 1:
+                    wmlu.print_info("SVD==1")
                     h = fake_points - proj_feats
                     h_norm = dist_f if self.svd == 1 else torch.norm(h, dim=1)
                     alpha = torch.clamp(h_norm, 2 * r, 4 * r)
@@ -516,18 +522,21 @@ class GLASS(torch.nn.Module):
                     fake_points = proj_feats + h
                     fake_feats[mask_s_gt[:, 0] == 1] = fake_points.to(fake_feats.dtype)
     
-                fake_scores,_ = self.discriminator(fake_feats)
+                fake_scores,fake_logits = self.discriminator(fake_feats)
                 if self.p > 0:
                     fake_dist = (fake_scores - mask_s_gt) ** 2
                     d_hard = torch.quantile(fake_dist, q=self.p)
-                    fake_scores_ = fake_scores[fake_dist >= d_hard].unsqueeze(1)  #使用最难预测的1-self.p的数据点
+                    #fake_scores_ = fake_scores[fake_dist >= d_hard].unsqueeze(1)  #使用最难预测的1-self.p的数据点
+                    fake_logits_ = fake_logits[fake_dist >= d_hard].unsqueeze(1)
                     mask_ = mask_s_gt[fake_dist >= d_hard].unsqueeze(1)
                 else:
-                    fake_scores_ = fake_scores
+                    #fake_scores_ = fake_scores
+                    fake_logits_ = fake_logits
                     mask_ = mask_s_gt
-                output = torch.cat([1 - fake_scores_, fake_scores_], dim=1)
+                #output = torch.cat([1 - fake_scores_, fake_scores_], dim=1)
                 with torch.cuda.amp.autocast(enabled=False):
-                    focal_loss = self.focal_loss(output.float(), mask_.float())*10
+                    focal_loss = torchvision.ops.sigmoid_focal_loss(inputs=fake_logits_.float(),targets=mask_.float(),alpha=-1,reduction = "mean")*10
+                    #focal_loss = self.focal_loss(output.float(), mask_.float())*10
                 
                 model_loss = [true_loss,gaus_loss,focal_loss]
                 info = ""

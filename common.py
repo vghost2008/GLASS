@@ -434,3 +434,52 @@ class NetworkFeatureAggregatorV4(NetworkFeatureAggregator):
         res.extend(list(self.output.parameters()))
         res.extend(list(self.att.parameters()))
         return res
+
+class NetworkFeatureAggregatorV5(NetworkFeatureAggregator):
+    """Efficient extraction of network features."""
+
+    def __init__(self, backbone, layers_to_extract_from, device, train_backbone=False,in_channels=[256,512,1024,2048]):
+        if hasattr(backbone,"out_info"):
+            layers_to_extract_from,in_channels = backbone.out_info
+        super().__init__(backbone=backbone,layers_to_extract_from=layers_to_extract_from,device=device,train_backbone=False)
+        print(f"layers_to_extract_from: {self.layers_to_extract_from}")
+        wtt.freeze_model(backbone)
+        channels = 256
+        self.out_convs = nn.Sequential()
+        for i in range(3):
+            self.out_convs.add_module(f"block{i}",ConvModule(channels,channels,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01)))
+
+        self.output = ConvModule(256,256,3,1,1,act_cfg=dict(type="Swish"),norm_cfg=dict(type='BN',momentum=0.01))
+        wtt.set_bn_eps(self.out_convs,1e-3)
+        wtt.set_bn_eps(self.output,1e-3)
+        
+
+    def forward(self, images, eval=True):
+        _,_,IH,IW = images.shape
+        outputs = super().forward(images)
+        features = [outputs[n] for n in self.layers_to_extract_from]
+        feature = self.out_convs(features[0])
+        feature = F.interpolate(feature,size=(IH//4,IW//4),mode="bilinear")
+
+        feature = self.output(feature)
+
+        shapes = []
+        shapes.append(feature.shape[-2:])
+
+        feature = torch.permute(feature,[0,2,3,1])
+        C = feature.shape[-1]
+        feature = torch.reshape(feature,[-1,C])
+        return feature,shapes
+
+
+    def train(self,mode=True):
+        [m.train(mode=mode) for m in self.out_convs]
+        self.output.train(mode=mode)
+        if mode==False:
+            self.backbone.eval()
+
+    def train_parameters(self):
+        res = []
+        res.extend(list(self.out_convs.parameters()))
+        res.extend(list(self.output.parameters()))
+        return res
