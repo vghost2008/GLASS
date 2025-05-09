@@ -30,14 +30,15 @@ class Discriminator(torch.nn.Module):
     def forward(self, x):
         B,_,H,W = self.img_shape
         C = x.shape[-1]
-        with torch.cuda.amp.autocast(False):
+        with torch.cuda.amp.autocast():
             x = torch.reshape(x,[B,H//4,W//4,C])
             x = torch.permute(x,[0,3,1,2])
-            x = self.body(x.float())
+            x = self.body(x)
             x = self.tail(x)
             x = torch.permute(x,[0,2,3,1])
             x = torch.reshape(x,[-1,1])
-            score = self.sigmoid(x)
+        with torch.cuda.amp.autocast(False):
+            score = self.sigmoid(x.float())
         return score,x
 
 
