@@ -137,7 +137,7 @@ class GLASS(torch.nn.Module):
             self.proj_opt = torch.optim.Adam(self.pre_projection.parameters(), lr, weight_decay=1e-5)
 
         self.eval_epochs = eval_epochs
-        self.eval_offset = eval_epochs-1
+        self.eval_offset = 0
         if self.eval_epochs<=2:
             print(f"WARNING: eval epochs={self.eval_epochs}")
         else:
@@ -339,7 +339,7 @@ class GLASS(torch.nn.Module):
                 except Exception as e:
                     print(f"ERROR: {e}")
     
-                if (i_epoch + self.eval_offset) % self.eval_epochs == 0:
+                if (i_epoch + self.eval_offset) % self.eval_epochs == self.eval_epochs-1:
                     print(f"\nBegin eval...")
                     sys.stdout.flush()
                     t0 = time.time()
