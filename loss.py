@@ -1,6 +1,8 @@
 import torch
 import numpy as np
 import torch.nn as nn
+import torch.nn.functional as F
+
 
 
 class FocalLoss(nn.Module):
@@ -85,3 +87,28 @@ class FocalLoss(nn.Module):
         else:
             loss = loss.sum()
         return loss
+
+def wvarifocal_loss(pred,
+                   target,
+                   alpha=1.0,
+                   gamma=2.0,
+                   reduction='mean',
+                   avg_factor=None):
+    ious = target
+    assert pred.size() == target.size()
+    pred = pred.float()
+    target = target.float()
+    pred_sigmoid = pred.sigmoid()
+    target = target.type_as(pred)
+    focal_weight = target + \
+            alpha * (pred_sigmoid - ious).abs().pow(gamma) * \
+            (target <= 0.0).float()
+
+    loss = F.binary_cross_entropy_with_logits(
+        pred, target, reduction='none') * focal_weight #与标准VarFocalLoss的主要区别，WVarFocalLoss的target的值为0或1，而VarFocalLoss的target为iou
+
+    if reduction=='mean':
+        return loss.mean()
+    elif reduction=='sum':
+        return loss.sum()
+    return loss

@@ -1,4 +1,4 @@
-from loss import FocalLoss
+from loss import FocalLoss,wvarifocal_loss
 from collections import OrderedDict
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter

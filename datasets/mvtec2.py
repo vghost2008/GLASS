@@ -317,6 +317,14 @@ class MVTecDataset2(torch.utils.data.Dataset):
 
         if self.split == DatasetSplit.TRAIN:
             aug = PIL.Image.open(np.random.choice(self.anomaly_source_paths)).convert("RGB")
+            if self.classname in ['sheet_metal','vial']:
+                aug2color = 0.1
+            else:
+                aug2color = 0.9
+            if torch.rand(1) > aug2color:
+                aug = aug.convert('L')
+                aug = aug.convert('RGB')
+
             if self.rand_aug:
                 transform_aug = self.rand_augmenter(size=image.shape[-2:])
                 aug = transform_aug(aug)
