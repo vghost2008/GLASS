@@ -923,9 +923,9 @@ class GLASS(torch.nn.Module):
             wmlu.make_dir_for_file(full_path_png)
             cv2.imwrite(full_path_png,raw_mask_thr)
 
-        print(f"Predict run save path {self.run_save_path}/{self.run_save_path+'_tiff'}")
+        print(f"\nPredict run save path {self.run_save_path}\n{self.run_save_path+'_tiff'}")
 
     def show_record(self,record,info=""):
         image_auroc, best_precision, p_auroc, best_recall, best_f1, epoch = record
         score = self.get_score(pauroc=record[2],f1=record[4])
-        print(f"{info}: M:{score:.3f}, pixel_auroc: {p_auroc}, Precision: {best_precision}, Recall: {best_recall}, F1: {best_f1}, best_epoch: {epoch}\n" )
+        print(f"{get_class_name()}: {info}: M:{score:.3f}, pixel_auroc: {p_auroc:.3f}, Precision: {best_precision:.3f}, Recall: {best_recall:.3f}, F1: {best_f1:.3f}, best_epoch: {epoch}\n" )

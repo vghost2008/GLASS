@@ -36,6 +36,7 @@ DataLoader = torch.utils.data.DataLoader
 @click.option("--test", type=str, default="ckpt")
 @click.option("--ckpt_path", type=str, default=None)
 @click.option("--lpid", type=int, default=-1, show_default=True)
+@click.option("--gpu_mem", type=int, default=22, show_default=True)
 def main(**kwargs):
     pass
 

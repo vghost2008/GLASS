@@ -30,9 +30,11 @@ def run(
         test,
         ckpt_path,
         lpid,
+        gpu_mem,
         *args,
         **kwargs,
 ):
+    wmlu.wait_gpu_mem_free(gpu,gpu_mem,delay=60)
     if lpid>1:
         wmlu.wait_pid_exit(lpid)
     np.random.seed(int(time.time()))
@@ -75,44 +77,8 @@ def run(
                 pass
 
             GLASS.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name,run_save_path=run_save_path)
-            if test == 'ckpt':
-                flag = GLASS.trainer(dataloaders["training"], dataloaders["testing"], dataloaders["base_training"],dataset_name)
-                if type(flag) == int:
-                    row_dist = {'Class': dataloaders["training"].name, 'Distribution': flag, 'Foreground': flag}
-                    df = pd.concat([df, pd.DataFrame(row_dist, index=[0])])
+            flag = GLASS.trainer(dataloaders["training"], dataloaders["testing"], dataloaders["base_training"],dataset_name)
 
-            if type(flag) != int:
-                try:
-                    best_precision, best_recall,best_f1, pixel_auroc, pixel_ap, pixel_pro, epoch =  GLASS.tester(dataloaders["testing"], dataset_name)
-                    result_collect.append(
-                        {
-                            "dataset_name": dataset_name,
-                            "best_epoch": epoch,
-                        }
-                    )
-    
-                    if epoch > -1:
-                        for key, item in result_collect[-1].items():
-                            if isinstance(item, str):
-                                continue
-                            elif isinstance(item, int):
-                                print(f"{key}:{item}")
-                            else:
-                                print(f"{key}:{round(item * 100, 2)} ", end="")
-    
-                    # save results csv after each category
-                    print("\n")
-                    result_metric_names = list(result_collect[-1].keys())[1:]
-                    result_dataset_names = [results["dataset_name"] for results in result_collect]
-                    result_scores = [list(results.values())[1:] for results in result_collect]
-                    utils.compute_and_store_final_results(
-                        run_save_path,
-                        result_scores,
-                        result_metric_names,
-                        row_names=result_dataset_names,
-                    )
-                except:
-                    pass
 
     # save distribution judgment xlsx after all categories
     if len(df['Class']) != 0:
