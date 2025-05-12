@@ -113,7 +113,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         self.downsampling = downsampling
         #self.resize = resize if self.distribution != 1 else [resize, resize]
         s = size_dict[classname]
-        down_stride = math.ceil(math.sqrt(s[0]*s[1])/700)
+        down_stride = math.sqrt(s[0]*s[1])/700
         img_cut_nr = get_img_cut_nr()
         if img_cut_nr <= 0:
             img_cut_nr = down_stride
