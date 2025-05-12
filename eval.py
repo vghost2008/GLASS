@@ -88,9 +88,9 @@ def run(
 
     print(f"dataset_name: ALL, AUROC: {all_pauroc}, mean: {np.mean(all_pauroc):.4f}, F1: {all_f1}, mean: {np.mean(all_f1):.4f}")
     print(f"PAUROC")
-    wmlu.show_list(all_pauroc,format="{:.3f}")
+    wmlu.show_list(all_pauroc,fmt="{:.3f}")
     print(f"F1")
-    wmlu.show_list(all_f1,format="{:.3f}")
+    wmlu.show_list(all_f1,fmt="{:.3f}")
     # save distribution judgment xlsx after all categories
     if len(df['Class']) != 0:
         os.makedirs('./datasets/excel', exist_ok=True)
