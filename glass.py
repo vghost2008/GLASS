@@ -902,7 +902,7 @@ class GLASS(torch.nn.Module):
     def _save_predict_results(self, images, scores, segmentations, img_paths,source,name,threshold=0.4):
         scores = np.squeeze(np.array(scores))
 
-        defects = np.array(images)
+        defects = images
         for i in range(len(defects)):
             defect = utils.torch_format_2_numpy_img(defects[i])
             mask = cv2.cvtColor(cv2.resize(segmentations[i], (defect.shape[1], defect.shape[0])),

@@ -13,6 +13,7 @@ import utils
 import numpy as np
 import time
 import wml.wtorch.train_toolkit as wtt
+import wml.wml_utils as wmlu
 from base_runner import *
 from datadef import get_class_name,set_class_name
 
@@ -86,6 +87,10 @@ def run(
             all_f1.append(best_f1)
 
     print(f"dataset_name: ALL, AUROC: {all_pauroc}, mean: {np.mean(all_pauroc):.4f}, F1: {all_f1}, mean: {np.mean(all_f1):.4f}")
+    print(f"PAUROC")
+    wmlu.show_list(all_pauroc,format="{:.3f}")
+    print(f"F1")
+    wmlu.show_list(all_f1,format="{:.3f}")
     # save distribution judgment xlsx after all categories
     if len(df['Class']) != 0:
         os.makedirs('./datasets/excel', exist_ok=True)
