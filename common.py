@@ -94,7 +94,7 @@ class NetworkFeatureAggregator(torch.nn.Module):
             layers_to_extract_from: [list of str]
         """
         self.outputs = {}
-        self.backbone = backbone
+        self.backbone = wnn.WeakRefmodel(backbone)
         self.device = device
         self.train_backbone = train_backbone
         if hasattr(backbone,'out_dict'):

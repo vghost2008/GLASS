@@ -16,6 +16,7 @@ import wml.semantic.mask_utils as sem
 import wml.wtorch.utils as wtu
 import wml.object_detection2.visualization as odv
 from .transforms import *
+from datadef import *
 import cv2
 
 _CLASSNAMES = [
@@ -98,7 +99,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
                    mvtec.DatasetSplit.TEST will also load mask data.
         """
         size_dict = {"can":[2230,1020],  "fabric":[2440,2040], "fruit_jelly":[2100,1520], 
-        "rice":[2440,2040], "sheet_metal":[4220,1050],"vial":[1400,1900], "wallplugs":[2440,2040], "walnuts":[2440,2040]}
+        "rice":[2440,2040], "sheet_metal":[4220,1050],"vial":[1400,1900], "wallplugs":[2440,2040], "walnuts":[2440,2040]}  #W,H
 
         super().__init__()
         self.source = source
@@ -112,12 +113,16 @@ class MVTecDataset2(torch.utils.data.Dataset):
         self.downsampling = downsampling
         #self.resize = resize if self.distribution != 1 else [resize, resize]
         s = size_dict[classname]
-        down_stride = math.ceil(math.sqrt(s[0]*s[1])/768)
+        down_stride = math.ceil(math.sqrt(s[0]*s[1])/700)
+        img_cut_nr = get_img_cut_nr()
+        if img_cut_nr <= 0:
+            img_cut_nr = down_stride
         if imgsz >1:
             self.resize = [align(imgsz,align_v),align(imgsz,align_v)]
         else:
-            self.resize = [align(s[1]//down_stride,align_v),align(s[0]//down_stride,align_v)]
-        print(f"Use resize {self.resize} for {classname}, downsample stride {down_stride}")
+            self.resize = [align(int(s[1]/down_stride),align_v)*img_cut_nr,align(int(s[0]/down_stride),align_v)*img_cut_nr]  #(H,W)
+        self.cut_size = [self.resize[0]//img_cut_nr,self.resize[1]//img_cut_nr]  #(H,W)
+        print(f"Use resize {self.resize}, cut size {self.cut_size} for {classname}, downsample stride {down_stride}")
         self.imgsize = self.resize
         self.imagesize = (3, self.imgsize, self.imgsize)
         self.classname = classname
@@ -155,6 +160,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         if split == DatasetSplit.TRAIN:
             self.transform_img = [
                 Resize(self.resize),
+                RandomCut(self.cut_size),
                 ColorJitter(p=0.3,p2=0.5),
                 RandomHorizontalFlip(h_flip_p),
                 RandomVerticalFlip(v_flip_p),

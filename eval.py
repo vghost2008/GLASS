@@ -79,7 +79,8 @@ def run(
             GLASS.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name,run_save_path=run_save_path,tb_dir="tb_eval")
             try:
                 best_precision, best_recall,best_f1, p_auroc, pixel_ap, pixel_pro, epoch =  GLASS.tester(dataloaders["testing"], dataset_name,ckpt_path=ckpt_path)
-            except:
+            except Exception as e:
+                print(f"ERROR: {e}")
                 continue
             cur_score = GLASS.get_score(pauroc=p_auroc,f1=best_f1)
             print(f"dataset_name: {dataset_name}, M:{(best_f1+p_auroc)/2:.3f}, pixel_auroc: {p_auroc}, Precision: {best_precision}, Recall: {best_recall}, F1: {best_f1}, best_epoch: {epoch}\n" )

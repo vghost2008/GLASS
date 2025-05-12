@@ -1,5 +1,13 @@
 ALL_CLASS_NAMES = ["can"  , "fabric"  , "fruit_jelly"  , "rice"  , "sheet_metal"  , "vial"  , "wallplugs"  , "walnuts"]
 _CLASS_NAME = ""
+_IMG_CUT_NR = 2
+
+def get_img_cut_nr():
+    return _IMG_CUT_NR
+
+def set_img_cut_nr(cut_nr):
+    global _IMG_CUT_NR
+    _IMG_CUT_NR = cut_nr
 
 def get_class_name():
     global _CLASS_NAME

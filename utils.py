@@ -200,3 +200,39 @@ def read_threshold_file(dir_name,classname):
         print(f"Use threshold {threshold}")
     
     return threshold
+
+
+def make_path(img,nr):
+    N,C,H,W = img.shape
+    mh = H//nr
+    mw = W//nr
+    res = []
+    for i in range(nr):
+        for j in range(nr):
+            res.append(img[:,:,j*mh:j*mh+mh,i*mw:i*mw+mw])
+    res = torch.concat(res,dim=0)
+    return res
+
+def merge_path(img,nr,scores=None):
+    img = np.array(img,dtype=img[0].dtype)
+    aN,mh,mw = img.shape
+    H = mh*nr
+    W = mw*nr
+    N = aN//(nr*nr)
+    img = np.split(img,nr*nr,axis=0)
+    res = np.zeros([N,H,W],dtype=img[0].dtype)
+
+    idx = 0
+    for i in range(nr):
+        for j in range(nr):
+            res[:,j*mh:j*mh+mh,i*mw:i*mw+mw] = img[idx]
+            idx += 1
+    
+    if scores is not None:
+        scores = np.array(scores)
+        scores = np.split(scores,nr*nr,axis=0)
+        scores = np.stack(scores,axis=-1)
+        scores = np.max(scores,axis=-1,keepdims=False)
+        return res,scores
+    
+    return res
