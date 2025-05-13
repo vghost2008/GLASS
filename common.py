@@ -321,22 +321,20 @@ class FeatureAttenation(nn.Module):
         assert classname in ALL_CLASS_NAMES, f"ERROR classname {classname}"
         if classname in ["fabric"  , "fruit_jelly"  , "rice"  , "sheet_metal"]:
             s0 = torch.ones([dino_channels_nr])*3
-            s1 = torch.ones([mrcnn_channels_nr])*(-3)
+            s1 = torch.ones([mrcnn_channels_nr])*(-2)
             s = torch.cat([s0,s1],dim=0)
         elif classname  in ["vial"  , "wallplugs"  , "walnuts", "can"]:
-            s0 = torch.ones([dino_channels_nr])*(-3)
+            s0 = torch.ones([dino_channels_nr])*(-2)
             s1 = torch.ones([mrcnn_channels_nr])*3
             s = torch.cat([s0,s1],dim=0)
         self.weights = nn.Parameter(s)
-        self.norm = wnn.LayerNorm(dino_channels_nr+mrcnn_channels_nr)
-        self.grad_scale = wnn.GradScale(0.05)
+        self.grad_scale = wnn.GradScale(0.5)
 
     def forward(self,x):
         weights = torch.sigmoid(self.weights)
         weights = weights.view([1,-1,1,1])
         weights = self.grad_scale(weights)
         x = x*weights
-        x = self.norm(x)
         return x
 
 

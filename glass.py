@@ -462,7 +462,7 @@ class GLASS(torch.nn.Module):
                     mask_ = mask_s_gt
                 #output = torch.cat([1 - fake_scores_, fake_scores_], dim=1)
                 with torch.cuda.amp.autocast(enabled=False):
-                    focal_loss = torchvision.ops.sigmoid_focal_loss(inputs=fake_logits_.float(),targets=mask_.float(),alpha=-1,reduction = "mean")*20
+                    focal_loss = torchvision.ops.sigmoid_focal_loss(inputs=fake_logits_.float(),targets=mask_.float(),alpha=-1,reduction = "mean")*100
                     #focal_loss = wvarifocal_loss(pred=fake_logits_.float(),target=mask_.float(),reduction = "mean")*20
                     #focal_loss = self.focal_loss(output.float(), mask_.float())*10
                 
