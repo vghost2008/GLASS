@@ -18,11 +18,14 @@ class Resize(transforms.Resize):
         return results
 
 class RandomCut(nn.Module):
-    def __init__(self,size):
+    def __init__(self,size,enable=True):
         super().__init__()
         self.size = size
+        self.enable = enable
 
     def forward(self,results):
+        if not self.enable:
+            return results
         img = results['img']
         img = np.array(img)
         max_y = img.shape[0]-self.size[0]
@@ -39,6 +42,9 @@ class RandomCut(nn.Module):
             fg_mask = Image.fromarray(fg_mask)
             results['fg_mask'] = fg_mask
         return results
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(size={self.size}, enable={self.enable})"
 
 class ColorJitter(nn.Module):
     def __init__(self,brightness=[0.5,1.5],p=0.5,p2=0.7):

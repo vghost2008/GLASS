@@ -160,7 +160,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         if split == DatasetSplit.TRAIN:
             self.transform_img = [
                 Resize(self.resize),
-                RandomCut(self.cut_size),
+                RandomCut(self.cut_size,enable=img_cut_nr>1),
                 ColorJitter(p=0.3,p2=0.5),
                 RandomHorizontalFlip(h_flip_p),
                 RandomVerticalFlip(v_flip_p),
