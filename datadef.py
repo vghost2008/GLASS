@@ -1,6 +1,6 @@
 ALL_CLASS_NAMES = ["can"  , "fabric"  , "fruit_jelly"  , "rice"  , "sheet_metal"  , "vial"  , "wallplugs"  , "walnuts"]
 _CLASS_NAME = ""
-_IMG_CUT_NR = 2
+_IMG_CUT_NR = 1
 
 def get_img_cut_nr():
     return _IMG_CUT_NR
