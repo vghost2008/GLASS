@@ -34,10 +34,11 @@ class Discriminator(torch.nn.Module):
         self.apply(init_weight)
 
     def forward(self, x):
-        with torch.cuda.amp.autocast(False):
-            x = self.body(x.float())
+        with torch.cuda.amp.autocast():
+            x = self.body(x)
             x = self.tail(x)
-            score = self.sigmoid(x)
+        with torch.cuda.amp.autocast(False):
+            score = self.sigmoid(x.float())
         return score,x
 
 
