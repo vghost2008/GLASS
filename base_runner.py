@@ -193,6 +193,7 @@ def dataset(
                  "mpdd": ["datasets.mvtec", "MVTecDataset"], "wfdd": ["datasets.mvtec", "MVTecDataset"], }
     dataset_info = _DATASETS[name]
     dataset_library = __import__(dataset_info[0], fromlist=[dataset_info[1]])
+    reverse = True
 
     all_names = ["can"  , "fabric"  , "fruit_jelly"  , "rice"  , "sheet_metal"  , "vial"  , "wallplugs"  , "walnuts"]
 
@@ -211,6 +212,8 @@ def dataset(
         except Exception as e:
             print(e)
             pass
+    if reverse:
+        subdatasets = subdatasets[::-1]
     print(f"subdatasets {subdatasets}")
 
     def get_dataloaders(seed, test, get_name=name):
