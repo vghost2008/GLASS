@@ -17,6 +17,7 @@ import wml.wtorch.utils as wtu
 import wml.object_detection2.visualization as odv
 from .transforms import *
 from datadef import *
+from .dataset_utils import adjust_mask
 import cv2
 
 _CLASSNAMES = [
@@ -138,7 +139,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         self.imagesize = (3, self.imgsize, self.imgsize)
         self.classname = classname
         self.dataset_name = dataset_name
-        self.mask_limit = self.MASK_LIMIT[self.classname]
+        self.mask_limit = [(x+1)/(down_stride*down_stride) for x in self.MASK_LIMIT[self.classname]]
 
         if self.classname == "can":
             h_flip_p = 0
@@ -311,7 +312,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         transform_aug = transforms.Compose(transform_aug)
         return transform_aug
 
-    def make_mask(self,image):
+    def make_mask(self,image,mask_fg):
         s = image.shape[-2:]
         if np.random.rand()<0.8:
             pl_max = np.random.randint(3,6+1)
@@ -323,6 +324,8 @@ class MVTecDataset2(torch.utils.data.Dataset):
                 print(f"Get mask by file faild: {e}.")
                 pl_max = np.random.randint(3,6+1)
                 mask_all = perlin_mask(image.shape, [s[0]//self.downsampling,s[1]//self.downsampling], 0, pl_max, mask_fg, 1)
+
+        mask_all = adjust_mask(mask_all,self.mask_limit,stride=self.downsampling)
         
         return mask_all
 
@@ -364,7 +367,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
             else:
                 aug = self.transform_aug_img(aug)
 
-            mask_all = self.make_mask(image)
+            mask_all = self.make_mask(image,mask_fg)
             mask_s = torch.from_numpy(mask_all[0])
             mask_l = torch.from_numpy(mask_all[1])
 

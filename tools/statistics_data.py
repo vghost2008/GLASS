@@ -7,7 +7,7 @@ import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser(description="build gif")
-    parser.add_argument("src_dir",type=str,help="src dir")
+    parser.add_argument("--src_dir",type=str,default="/home/wj/ai/mldata1/MVTEC/datasets/",help="src dir")
     args = parser.parse_args()
     return args
 
@@ -47,7 +47,7 @@ def statistics_one_dir(dir_path):
 
 def statistics(path):
     sub_dirs = wmlu.get_subdir_in_dir(path,absolute_path=True)
-    for sd in sub_dirs:
+    for sd in sub_dirs[1:]:
         statistics_one_dir(sd)
     
 

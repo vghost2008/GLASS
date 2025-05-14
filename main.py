@@ -34,7 +34,7 @@ def run(
         *args,
         **kwargs,
 ):
-    wmlu.wait_gpu_mem_free(gpu,gpu_mem,delay=60)
+    #wmlu.wait_gpu_mem_free(gpu,gpu_mem,delay=60)
     if lpid>1:
         wmlu.wait_pid_exit(lpid)
     np.random.seed(int(time.time()))
