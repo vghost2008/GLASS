@@ -319,12 +319,16 @@ class FeatureAttenation(nn.Module):
         super().__init__()
         classname = get_class_name()
         assert classname in ALL_CLASS_NAMES, f"ERROR classname {classname}"
-        if classname in ["fabric"  , "fruit_jelly"  , "rice"  , "sheet_metal"]:
+        if classname in ["fruit_jelly"  , "rice"]:
             s0 = torch.ones([dino_channels_nr])*3
             s1 = torch.ones([mrcnn_channels_nr])*(-2)
             s = torch.cat([s0,s1],dim=0)
-        elif classname  in ["vial"  , "wallplugs"  , "walnuts", "can"]:
+        elif classname  in ["vial"  , "walnuts", "can"]:
             s0 = torch.ones([dino_channels_nr])*(-2)
+            s1 = torch.ones([mrcnn_channels_nr])*3
+            s = torch.cat([s0,s1],dim=0)
+        elif classname in ["fabric", "sheet_metal", "wallplugs"]:
+            s0 = torch.ones([dino_channels_nr])*3
             s1 = torch.ones([mrcnn_channels_nr])*3
             s = torch.cat([s0,s1],dim=0)
         self.weights = nn.Parameter(s)
