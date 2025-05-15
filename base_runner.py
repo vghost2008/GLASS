@@ -1,7 +1,7 @@
 from datetime import datetime
 import pandas as pd
 import os
-os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = "python"
+#os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = "python"
 import logging
 import sys
 import click
@@ -234,8 +234,9 @@ def dataset(
                 test_dataset,
                 batch_size=batch_size,
                 shuffle=False,
-                num_workers=num_workers,
-                prefetch_factor=2,
+                num_workers=0,
+                #num_workers=num_workers,
+                #prefetch_factor=2,
                 pin_memory=pin_memory,
             )
 
