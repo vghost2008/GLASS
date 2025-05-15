@@ -53,7 +53,7 @@ def run(
     df = pd.DataFrame(data)
     for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
         set_class_name(dataloaders["training"].dataset.classname)
-        #utils.fix_seeds(seed, device)
+        utils.fix_seeds(seed, device)
         dataset_name = dataloaders["training"].name
         imagesize = dataloaders["training"].dataset.imagesize
         glass_list = methods["get_glass"](imagesize, device)

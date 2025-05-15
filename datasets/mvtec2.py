@@ -134,7 +134,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         else:
             self.resize = [align(int(s[1]/down_stride),align_v)*img_cut_nr,align(int(s[0]/down_stride),align_v)*img_cut_nr]  #(H,W)
         self.cut_size = [self.resize[0]//img_cut_nr,self.resize[1]//img_cut_nr]  #(H,W)
-        print(f"Use resize {self.resize}, cut size {self.cut_size} for {classname}, downsample stride {down_stride}")
+        print(f"Use resize {self.resize}, cut size {self.cut_size} for {classname}, downsample stride {down_stride}, img cut nr {img_cut_nr}")
         self.imgsize = self.resize
         self.imagesize = (3, self.imgsize, self.imgsize)
         self.classname = classname

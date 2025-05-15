@@ -277,6 +277,8 @@ class GLASS(torch.nn.Module):
         best_record = None
         error_nr = 0
         min_error_nr = 0
+        base_epoch = 320
+        stop_epoch_nr = 120
         for i_epoch in pbar:
             try:
                 self.forward_modules.eval()
@@ -312,11 +314,14 @@ class GLASS(torch.nn.Module):
                     eval_path = osp.join(self.run_save_path,'eval' , name)
                     train_path = osp.join(self.run_save_path,'training' , name)
                     cur_score = self.get_score(pauroc=pixel_auroc,f1=best_f1)
+
                     if best_record is not None:
                         best_score = self.get_score(pauroc=best_record[2],f1=best_record[4])
                         print(f"\nBest score {best_score}, current score {cur_score}\n")
                         self.show_record(best_record,"best record")
+
                     self.show_record([image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch],"current record")
+
                     if best_record is None:
                         best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
                         ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
@@ -339,6 +344,21 @@ class GLASS(torch.nn.Module):
                             wmlu.symlink(ckpt_path_best,sym_path)
                         except:
                             pass
+                    elif cur_score<best_score-0.05:
+                        best_epoch_n = best_record[-1]
+                        if i_epoch>=base_epoch and i_epoch-best_epoch_n>=stop_epoch_nr:
+                            sys.stdout.flush()
+                            print(f"----------------------------------------------------------------------\n")
+                            print(f"----------------------------------------------------------------------\n")
+                            print(f"----------------------------------------------------------------------\n")
+                            print(f"Ealy stop, best epoch is {best_epoch_n}, current epoch is {i_epoch}")
+                            print(f"----------------------------------------------------------------------\n")
+                            print(f"----------------------------------------------------------------------\n")
+                            print(f"----------------------------------------------------------------------\n")
+                            sys.stdout.flush()
+                            break
+
+
     
                     pbar_str1 = f" IAUC:{round(image_auroc * 100, 2)}({round(best_record[0] * 100, 2)})" \
                                 f" PAUC:{round(pixel_auroc * 100, 2)}({round(best_record[2] * 100, 2)})" \
@@ -757,6 +777,7 @@ class GLASS(torch.nn.Module):
         masks = []
         labels_gt = []
         masks_gt = []
+        print(f"Img cut nr in predict {get_img_cut_nr()}")
 
         with tqdm.tqdm(test_dataloader, desc="Inferring...", leave=False, unit='batch') as data_iterator:
             for data in data_iterator:

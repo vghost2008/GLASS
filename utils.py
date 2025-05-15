@@ -89,6 +89,7 @@ def fix_seeds(seed, with_torch=True, with_cuda=True):
         with_torch: Flag. If true, torch-related seeds are fixed.
         with_cuda: Flag. If true, torch+cuda-related seeds are fixed
     """
+    print(f"Fix random seed to {seed}")
     random.seed(seed)
     np.random.seed(seed)
     if with_torch:
