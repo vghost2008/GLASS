@@ -12,7 +12,8 @@ import glass
 import utils
 import numpy as np
 import time
-from wml.wtorch.data import DataLoader as torchDataLoader
+#from wml.wtorch.data import DataLoader as torchDataLoader
+from wml.env_utils import get_git_info
 #[(0, 'can'), (1, 'fabric'), (2, 'fruit_jelly'), (3, 'rice'), (4, 'sheet_metal'), (5, 'vial'), (6, 'wallplugs'), (7, 'walnuts')]
 #classname walnuts, split DatasetSplit.TRAIN, len 480, 7
 #classname can, split DatasetSplit.TRAIN, len 458, 0
@@ -84,6 +85,7 @@ def net(
         step,
         limit,
 ):
+    print(f"git {get_git_info()}")
     backbone_names = list(backbone_names)
     if len(backbone_names) > 1:
         layers_to_extract_from_coll = []
