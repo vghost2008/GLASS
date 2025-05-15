@@ -14,10 +14,14 @@ def get_class_name():
     global _CLASS_NAME
     return _CLASS_NAME
 
+def auto_set_img_cut_nr(name):
+    assert name in ALL_CLASS_NAMES, f"ERROR class name {name}"
+    if name in ["can","rice", "wallplugs"]:
+        set_img_cut_nr(2)
+
 def set_class_name(name):
     global _CLASS_NAME
     _CLASS_NAME = name
-    if name in ["can","rice", "wallplugs"]:
-        set_img_cut_nr(2)
+    auto_set_img_cut_nr(name)
     assert name in ALL_CLASS_NAMES, f"ERROR class name {name}"
     print(f"Set class name to {get_class_name()}")

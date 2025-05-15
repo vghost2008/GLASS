@@ -126,6 +126,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         #self.resize = resize if self.distribution != 1 else [resize, resize]
         s = size_dict[classname]
         down_stride = math.sqrt(s[0]*s[1])/700
+        auto_set_img_cut_nr(classname)
         img_cut_nr = get_img_cut_nr()
         if img_cut_nr <= 0:
             img_cut_nr = down_stride
