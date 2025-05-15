@@ -52,32 +52,35 @@ def run(
     data = {'Class': [], 'Distribution': [], 'Foreground': []}
     df = pd.DataFrame(data)
     for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
-        set_class_name(dataloaders["training"].dataset.classname)
-        utils.fix_seeds(seed, device)
-        dataset_name = dataloaders["training"].name
-        imagesize = dataloaders["training"].dataset.imagesize
-        glass_list = methods["get_glass"](imagesize, device)
-
-
-        LOGGER.info(
-            "Selecting dataset [{}] ({}/{}) {}".format(
-                dataset_name,
-                dataloader_count + 1,
-                len(list_of_dataloaders),
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        try:
+            set_class_name(dataloaders["training"].dataset.classname)
+            utils.fix_seeds(seed, device)
+            dataset_name = dataloaders["training"].name
+            imagesize = dataloaders["training"].dataset.imagesize
+            glass_list = methods["get_glass"](imagesize, device)
+    
+    
+            LOGGER.info(
+                "Selecting dataset [{}] ({}/{}) {}".format(
+                    dataset_name,
+                    dataloader_count + 1,
+                    len(list_of_dataloaders),
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                )
             )
-        )
-
-        models_dir = os.path.join(run_save_path, "models")
-        os.makedirs(models_dir, exist_ok=True)
-        for i, GLASS in enumerate(glass_list):
-            flag = 0., 0., 0., 0., 0., -1.
-            if GLASS.backbone.seed is not None:
-                #utils.fix_seeds(GLASS.backbone.seed, device)
-                pass
-
-            GLASS.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name,run_save_path=run_save_path)
-            flag = GLASS.trainer(dataloaders["training"], dataloaders["testing"], dataloaders["base_training"],dataset_name)
+    
+            models_dir = os.path.join(run_save_path, "models")
+            os.makedirs(models_dir, exist_ok=True)
+            for i, GLASS in enumerate(glass_list):
+                flag = 0., 0., 0., 0., 0., -1.
+                if GLASS.backbone.seed is not None:
+                    #utils.fix_seeds(GLASS.backbone.seed, device)
+                    pass
+    
+                GLASS.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name,run_save_path=run_save_path)
+                flag = GLASS.trainer(dataloaders["training"], dataloaders["testing"], dataloaders["base_training"],dataset_name)
+        except Exception as e:
+            wmlu.print_error(f"{e}")
 
 
     # save distribution judgment xlsx after all categories
