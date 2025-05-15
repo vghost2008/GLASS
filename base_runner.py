@@ -256,8 +256,9 @@ def dataset(
                 predict_dataset,
                 batch_size=batch_size,
                 shuffle=False,
-                num_workers=num_workers,
-                prefetch_factor=2,
+                num_workers=0,
+                #num_workers=num_workers,
+                #prefetch_factor=2,
                 pin_memory=pin_memory,
             )
 
