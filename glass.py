@@ -30,6 +30,7 @@ import time
 from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
 from datadef import get_class_name, get_img_cut_nr
 import torchvision
+import traceback
 from utils import *
 
 def trace_grad_fn(grad_fn, depth=0):
@@ -293,6 +294,7 @@ class GLASS(torch.nn.Module):
                             os.remove(ckpt_path_cur)
                         torch.save(state_dict, ckpt_path_cur)
                 except Exception as e:
+                    traceback.print_exc(file=sys.stdout)
                     print(f"ERROR: {e}")
     
                 if (i_epoch + self.eval_offset) % self.eval_epochs == self.eval_epochs-1:
