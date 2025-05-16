@@ -59,7 +59,6 @@ class MVTecDataset2(torch.utils.data.Dataset):
     MASK_LIMIT = {
     "can":[135.07, 105.53, 16.00, 383.50,119.18, 105.38, 6.00, 372.50],
     "fabric":[62508.77, 228914.33, 96.50, 918997.00,29300.98, 159800.35, 1.50, 918997.00],
-    "fg_mask":[2256760.00, 2154.38, 2254530.00, 2261220.00,2256760.00, 2154.38, 2254530.00, 2261220.00],
     "fruit_jelly":[41890.53, 53357.37, 494.00, 183497.00,11023.82, 25277.03, 0.00, 134121.00],
     "rice":[12866.10, 18127.81, 2267.50, 66327.00,9649.58, 16335.40, 44.50, 66327.00],
     "sheet_metal":[25210.77, 45619.21, 481.50, 181696.50,4727.02, 19975.10, 0.00, 167242.50],
@@ -141,6 +140,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         self.classname = classname
         self.dataset_name = dataset_name
         self.mask_limit = [(x+1)/(down_stride*down_stride) for x in self.MASK_LIMIT[self.classname]]
+        self.apply_ajust_mask = classname in ['can']
 
         if self.classname == "can":
             h_flip_p = 0
@@ -326,7 +326,8 @@ class MVTecDataset2(torch.utils.data.Dataset):
                 pl_max = np.random.randint(3,6+1)
                 mask_all = perlin_mask(image.shape, [s[0]//self.downsampling,s[1]//self.downsampling], 0, pl_max, mask_fg, 1)
 
-        mask_all = adjust_mask(mask_all,self.mask_limit,stride=self.downsampling)
+        if self.apply_ajust_mask:
+            mask_all = adjust_mask(mask_all,self.mask_limit,stride=self.downsampling)
         
         return mask_all
 
