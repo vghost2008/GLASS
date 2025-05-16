@@ -17,6 +17,7 @@ import wml.wml_utils as wmlu
 from base_runner import *
 from datadef import get_class_name,set_class_name
 
+
 @main.result_callback()
 def run(
         methods,

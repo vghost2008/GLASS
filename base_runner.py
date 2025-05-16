@@ -233,7 +233,7 @@ def dataset(
                 test_dataset,
                 batch_size=batch_size,
                 shuffle=False,
-                num_workers=num_workers,
+                num_workers=1,
                 prefetch_factor=2,
                 pin_memory=pin_memory,
             )
@@ -254,8 +254,7 @@ def dataset(
                 predict_dataset,
                 batch_size=batch_size,
                 shuffle=False,
-                num_workers=num_workers,
-                prefetch_factor=2,
+                num_workers=0,
                 pin_memory=pin_memory,
             )
 
