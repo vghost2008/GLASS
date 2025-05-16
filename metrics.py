@@ -5,7 +5,7 @@ from wml.object_detection2.metrics.classifier_toolkit import precision_recall_cu
 import cv2
 import numpy as np
 import pandas as pd
-from adeval import  EvalAccumulatorCuda
+#from adeval import  EvalAccumulatorCuda
 import torch
 from itertools import groupby
 
