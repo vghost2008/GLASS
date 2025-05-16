@@ -277,7 +277,7 @@ class GLASS(torch.nn.Module):
         best_record = None
         error_nr = 0
         min_error_nr = 0
-        base_epoch = 320
+        base_epoch = 400
         stop_epoch_nr = 120
         for i_epoch in pbar:
             try:
