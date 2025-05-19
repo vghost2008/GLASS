@@ -277,7 +277,7 @@ class GLASS(torch.nn.Module):
         best_record = None
         error_nr = 0
         min_error_nr = 0
-        base_epoch = 320
+        base_epoch = 400
         stop_epoch_nr = 120
         for i_epoch in pbar:
             try:
@@ -299,7 +299,8 @@ class GLASS(torch.nn.Module):
                     print(f"\nBegin eval...")
                     sys.stdout.flush()
                     t0 = time.time()
-                    images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
+                    with torch.cuda.amp.autocast():
+                        images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
                     image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
                                                                                              labels_gt, masks_gt, name,img_paths=img_paths)
     
