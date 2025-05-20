@@ -123,6 +123,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         self.fg = fg
         self.rand_aug = rand_aug
         self.downsampling = downsampling
+        self.apply_adjust_mask = classname in ["can"  , "fabric"  , "fruit_jelly"  ,  "sheet_metal"]
         #self.resize = resize if self.distribution != 1 else [resize, resize]
         s = size_dict[classname]
         down_stride = math.sqrt(s[0]*s[1])/700
@@ -135,7 +136,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         else:
             self.resize = [align(int(s[1]/down_stride),align_v)*img_cut_nr,align(int(s[0]/down_stride),align_v)*img_cut_nr]  #(H,W)
         self.cut_size = [self.resize[0]//img_cut_nr,self.resize[1]//img_cut_nr]  #(H,W)
-        print(f"Use resize {self.resize}, cut size {self.cut_size} for {classname}, downsample stride {down_stride}, img cut nr {img_cut_nr}")
+        print(f"Use resize {self.resize}, cut size {self.cut_size} for {classname}, downsample stride {down_stride}, img cut nr {img_cut_nr}, apply adjust mask {self.apply_adjust_mask}")
         self.imgsize = self.resize
         self.imagesize = (3, self.imgsize, self.imgsize)
         self.classname = classname
@@ -326,7 +327,8 @@ class MVTecDataset2(torch.utils.data.Dataset):
                 pl_max = np.random.randint(3,6+1)
                 mask_all = perlin_mask(image.shape, [s[0]//self.downsampling,s[1]//self.downsampling], 0, pl_max, mask_fg, 1)
 
-        mask_all = adjust_mask(mask_all,self.mask_limit,stride=self.downsampling)
+        if self.apply_adjust_mask:
+            mask_all = adjust_mask(mask_all,self.mask_limit,stride=self.downsampling)
         
         return mask_all
 

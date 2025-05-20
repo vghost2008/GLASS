@@ -14,6 +14,7 @@ from torchvision.transforms.functional import to_pil_image
 from models.vit_encoder import load as dino_load
 from models.image_encoder import ImageEncoderViT
 import wml.wtorch.utils as wtu
+from datadef import get_class_name
 
 _BACKBONES = {
     "alexnet": "models.alexnet(pretrained=True)",
@@ -154,6 +155,16 @@ def load(name):
     out_info: 存储模型输出的key及通道数
     out_dict与out_info有重复
     '''
+    if name == "auto":
+        classname = get_class_name()
+        assert classname in ["can"  , "fabric"  , "fruit_jelly"  , "rice"  , "sheet_metal"  , "vial"  , "wallplugs"  , "walnuts"], f"ERROR classes name {classname}"
+        if classname == "fruit_jelly":
+            name = "dino"
+        elif classname == "vial":
+            name = "maskrcnn"
+        else:
+            name = "ensemble"
+        print(f"backbone = {name} for {classname}")
     backbone = eval(_BACKBONES[name])
     if name == "wideresnet50":
         backbone.out_info = [["layer1","layer2","layer3","layer4"],[256,512,1024,2048]]

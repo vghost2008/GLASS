@@ -24,6 +24,7 @@ from wml.env_utils import get_git_info
 #classname sheet_metal, split DatasetSplit.TRAIN, len 156, 4
 DataLoader = torch.utils.data.DataLoader
 #DataLoader = torchDataLoader
+predict_bs = 4
 
 
 @click.group(chain=True)
@@ -44,7 +45,7 @@ def main(**kwargs):
 @main.command("net")
 @click.option("--dsc_margin", type=float, default=0.5)
 @click.option("--train_backbone", is_flag=True)
-@click.option("--backbone_names", "-b", type=str, multiple=True, default=[])
+@click.option("--backbone_names", "-b", type=str, multiple=True, default=["auto"])
 @click.option("--layers_to_extract_from", "-le", type=str, multiple=True, default=["layer1","layer2","layer3","layer4"])
 @click.option("--pretrain_embed_dimension", type=int, default=1024)
 @click.option("--target_embed_dimension", type=int, default=1024)
@@ -230,7 +231,7 @@ def dataset(
 
             test_dataloader = DataLoader(
                 test_dataset,
-                batch_size=batch_size,
+                batch_size=predict_bs,
                 shuffle=False,
                 num_workers=num_workers,
                 prefetch_factor=2,
@@ -251,7 +252,7 @@ def dataset(
 
             predict_dataloader = DataLoader(
                 predict_dataset,
-                batch_size=batch_size,
+                batch_size=predict_bs,
                 shuffle=False,
                 num_workers=num_workers,
                 prefetch_factor=2,

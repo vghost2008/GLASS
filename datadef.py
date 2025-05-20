@@ -16,9 +16,10 @@ def get_class_name():
 
 def auto_set_img_cut_nr(name):
     assert name in ALL_CLASS_NAMES, f"ERROR class name {name}"
-    set_img_cut_nr(2)
-    #if name in ["can","rice", "wallplugs"]:
-        #set_img_cut_nr(2)
+    if name in ["walnuts"]:
+        set_img_cut_nr(1)
+    else:
+        set_img_cut_nr(2)
 
 def set_class_name(name):
     global _CLASS_NAME

@@ -789,6 +789,7 @@ class GLASS(torch.nn.Module):
                     image = data["image"]
                     images.extend(image.numpy())
                     img_paths.extend(data["image_path"])
+                #with torch.cuda.amp.autocast():
                 _scores, _masks = self._predict(image)
                 for score, mask in zip(_scores, _masks):
                     scores.append(score)

@@ -1,5 +1,7 @@
-## v2.6.3
+## v2.7
 - 基于v2.6,2.6.1及2.6.2的测试结果仅walnuts不切图,  can, fabric, fruit jelly, sheet metal调整mask分布
+- 自动backbone类型
+
 ## v2.6.2
 - 在v2.6的基础上所有的类别都切图，与v2.6.1对比
 
