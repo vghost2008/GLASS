@@ -888,7 +888,7 @@ class GLASS(torch.nn.Module):
             wmlu.make_dir_for_file(full_path_tiff)
             #i_shape = wmli.get_img_size(ipath)
             i_shape = raw_mask.shape
-            raw_mask = cv2.resize(raw_mask,(i_shape[1]//2,i_shape[0]//2),interpolation=cv2.INTER_LINEAR)
+            raw_mask = cv2.resize(raw_mask,(i_shape[1]//(2*get_img_cut_nr()),i_shape[0]//(2*get_img_cut_nr())),interpolation=cv2.INTER_LINEAR)
             raw_mask_fp16 = raw_mask.astype(np.float16)
             #raw_mask = raw_mask.astype(np.float16)
             tifffile.imwrite(full_path_tiff,raw_mask_fp16)
