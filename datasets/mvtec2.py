@@ -123,7 +123,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         self.fg = fg
         self.rand_aug = rand_aug
         self.downsampling = downsampling
-        self.apply_adjust_mask = classname in ["can"  , "fabric"  , "fruit_jelly"  ,  "sheet_metal"]
+        self.apply_adjust_mask = classname in ["can"  , "fabric"  , "fruit_jelly"  ,  'rice', "sheet_metal"]
         #self.resize = resize if self.distribution != 1 else [resize, resize]
         s = size_dict[classname]
         down_stride = math.sqrt(s[0]*s[1])/700
