@@ -104,26 +104,27 @@ class GLASS(torch.nn.Module):
     ):
 
         train_backbone = True
-        self.backbone = wnn.WeakRefmodel(backbone.to(device))
+        backbone = backbone.to(device)
+        self.backbone = wnn.WeakRefmodel(backbone)
         self.layers_to_extract_from = layers_to_extract_from
         self.input_shape = input_shape
         self.device = device
 
-        if hasattr(self.backbone,"aggregator") and self.backbone.aggregator == "NetworkFeatureAggregatorV3":
+        if hasattr(backbone,"aggregator") and backbone.aggregator == "NetworkFeatureAggregatorV3":
             feature_aggregator = common.NetworkFeatureAggregatorV3(
-                self.backbone, self.layers_to_extract_from, self.device, train_backbone
+                backbone, self.layers_to_extract_from, self.device, train_backbone
             ).to(device)
-        elif hasattr(self.backbone,"aggregator") and self.backbone.aggregator == "NetworkFeatureAggregatorV4":
+        elif hasattr(backbone,"aggregator") and backbone.aggregator == "NetworkFeatureAggregatorV4":
             feature_aggregator = common.NetworkFeatureAggregatorV4(
-                self.backbone, self.layers_to_extract_from, self.device, train_backbone
+                backbone, self.layers_to_extract_from, self.device, train_backbone
             ).to(device)
-        elif hasattr(self.backbone,"aggregator") and self.backbone.aggregator == "NetworkFeatureAggregatorV5":
+        elif hasattr(backbone,"aggregator") and backbone.aggregator == "NetworkFeatureAggregatorV5":
             feature_aggregator = common.NetworkFeatureAggregatorV5(
-                self.backbone, self.layers_to_extract_from, self.device, train_backbone
+                backbone, self.layers_to_extract_from, self.device, train_backbone
             ).to(device)
         else:
             feature_aggregator = common.NetworkFeatureAggregatorV2(
-                self.backbone, self.layers_to_extract_from, self.device, train_backbone
+                backbone, self.layers_to_extract_from, self.device, train_backbone
             ).to(device)
         self.forward_modules = feature_aggregator
 
@@ -296,16 +297,16 @@ class GLASS(torch.nn.Module):
                     best_threshold, best_precision, best_recall, best_f1 = self.prf
                     cur_score = self.get_score(pauroc=pixel_auroc,f1=best_f1)
                     print(f"Model cur score {cur_score}")
-                    model_ema_er =  self.ema.model._evaluate(images, scores, segmentations,
+                    model_ema_er =  self.ema.ema._evaluate(images, scores, segmentations,
                                                              labels_gt, masks_gt, name,img_paths=img_paths)
                     image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_ema_er
-                    best_threshold, best_precision, best_recall, best_f1 = self.ema.model.prf
+                    best_threshold, best_precision, best_recall, best_f1 = self.ema.ema.prf
                     cur_ema_score = self.get_score(pauroc=pixel_auroc,f1=best_f1)
                     print(f"Model cur ema score {cur_ema_score}")
                     if cur_ema_score>cur_score:
                         print(f"use ema ckpt")
                         image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_ema_er
-                        best_threshold, best_precision, best_recall, best_f1 = self.ema.model.prf
+                        best_threshold, best_precision, best_recall, best_f1 = self.ema.ema.prf
                     else:
                         print(f"Use model ckpt")
                         image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_er
@@ -342,7 +343,7 @@ class GLASS(torch.nn.Module):
                         os.remove(ckpt_path_best)
                         ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
                         if cur_ema_score>cur_score:
-                            state_dict = self.ema.model.get_state_dict()
+                            state_dict = self.ema.ema.get_state_dict()
                         else:
                             state_dict = self.get_state_dict()
                         torch.save(state_dict, ckpt_path_best)
@@ -560,6 +561,9 @@ class GLASS(torch.nn.Module):
                 log_img = torch.unsqueeze(data_item["mask_s"][:3],1)*200
                 self.logger.logger.add_images("mask_s",log_img.to(torch.uint8),self.logger.g_iter)
                 self.logger.logger.add_scalar("ema_old_persent", self.ema.ema_persent, self.logger.g_iter)
+                wsummary.log_optimizer(self.logger.logger,self.backbone_opt,self.logger.g_iter,name="backbone_opt")
+                wsummary.log_optimizer(self.logger.logger,self.dsc_opt,self.logger.g_iter,name="dsc_opt")
+                wsummary.log_optimizer(self.logger.logger,self.proj_opt,self.logger.g_iter,name="proj_opt")
                 wsummary.log_all_variable(self.logger.logger,self,global_step=self.logger.g_iter)
             self.logger.step()
 
@@ -722,7 +726,8 @@ class GLASS(torch.nn.Module):
     
                 cv2.imwrite(osp.join(full_path , save_name), img_up)
 
-        print(f"Eval save path: {osp.join(self.run_save_path, path)}")
+        if hasattr(self,'run_save_path'):
+            print(f"Eval save path: {osp.join(self.run_save_path, path)}")
 
         return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro
 

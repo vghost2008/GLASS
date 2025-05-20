@@ -13,6 +13,7 @@ import utils
 import numpy as np
 import time
 from base_runner import *
+import traceback
 import wml.wml_utils as wmlu
 from datadef import get_class_name, set_class_name
 
@@ -80,6 +81,7 @@ def run(
                 GLASS.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name,run_save_path=run_save_path)
                 flag = GLASS.trainer(dataloaders["training"], dataloaders["testing"], dataloaders["base_training"],dataset_name)
         except Exception as e:
+            traceback.print_exc()
             wmlu.print_error(f"{e}")
 
 
