@@ -1,3 +1,8 @@
+## v2.8
+
+- 基于v2.7增加lr shedule
+- 添加EMA
+
 ## v2.7
 - 基于v2.6,2.6.1及2.6.2的测试结果仅walnuts不切图,  can, fabric, fruit jelly, sheet metal调整mask分布
 - 自动backbone类型

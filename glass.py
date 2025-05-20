@@ -24,6 +24,7 @@ import wml.wml_utils as wmlu
 import wml.wtorch.summary as wsummary
 import wml.wtorch.utils as wtu
 import wml.wtorch.train_toolkit as wtt
+import wml.wtorch.nn as wnn
 import wml.img_utils as wmli
 import colorama
 import time
@@ -32,6 +33,8 @@ from datadef import get_class_name, get_img_cut_nr
 import torchvision
 import traceback
 from utils import *
+from wml.wtorch.wlr_scheduler import WarmupCosLR
+from wml.wtorch.ema import ModelEMA
 
 def trace_grad_fn(grad_fn, depth=0):
     if grad_fn is None:
@@ -96,11 +99,12 @@ class GLASS(torch.nn.Module):
             svd=0,
             step=20,
             limit=392,
+            dataset_len=100,
             **kwargs,
     ):
 
         train_backbone = True
-        self.backbone = backbone.to(device)
+        self.backbone = wnn.WeakRefmodel(backbone.to(device))
         self.layers_to_extract_from = layers_to_extract_from
         self.input_shape = input_shape
         self.device = device
@@ -131,12 +135,14 @@ class GLASS(torch.nn.Module):
         if self.train_backbone:
             #self.backbone_opt = torch.optim.AdamW(self.forward_modules["feature_aggregator"].backbone.parameters(), lr)
             self.backbone_opt = self.get_embed_optim()
+            self.backbone_ls = WarmupCosLR(self.backbone_opt,400,640*dataset_len)
 
         self.pre_proj = pre_proj
         if self.pre_proj > 0:
             self.pre_projection = Projection(self.target_embed_dimension, self.target_embed_dimension, pre_proj)
             self.pre_projection.to(self.device)
             self.proj_opt = torch.optim.Adam(self.pre_projection.parameters(), lr, weight_decay=1e-5)
+            self.proj_ls = WarmupCosLR(self.proj_opt,400,640*dataset_len)
 
         self.eval_epochs = eval_epochs
         self.eval_offset = 0
@@ -150,6 +156,7 @@ class GLASS(torch.nn.Module):
         self.discriminator = Discriminator(self.target_embed_dimension, n_layers=dsc_layers, hidden=dsc_hidden)
         self.discriminator.to(self.device)
         self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2, weight_decay=1e-4)
+        self.dsc_ls = WarmupCosLR(self.dsc_opt,400,640*dataset_len)
         self.dsc_margin = dsc_margin
 
         self.p = p
@@ -167,6 +174,7 @@ class GLASS(torch.nn.Module):
         self.model_dir = ""
         self.dataset_name = ""
         self.logger = None
+        self.ema = ModelEMA(self,beta=2)
 
     def get_embed_optim(self):
         bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.forward_modules,return_unused=True)
@@ -215,7 +223,6 @@ class GLASS(torch.nn.Module):
 
     def trainer(self, training_data, val_data, base_training_data,name):
         print(self)
-        state_dict = {}
         ckpt_path = glob.glob(self.ckpt_dir + '/ckpt_best*')
         ckpt_path_save = os.path.join(self.ckpt_dir, "ckpt.pth")
 
@@ -229,18 +236,6 @@ class GLASS(torch.nn.Module):
         '''
 
         ckpt_path_best = ""
-
-        def update_state_dict():
-            state_dict["discriminator"] = OrderedDict({
-                k: v.detach().cpu()
-                for k, v in self.discriminator.state_dict().items()})
-            state_dict["forward_modules"] = OrderedDict({
-                k: v.detach().cpu()
-                for k, v in self.forward_modules.state_dict().items()})
-            if self.pre_proj > 0:
-                state_dict["pre_projection"] = OrderedDict({
-                    k: v.detach().cpu()
-                    for k, v in self.pre_projection.state_dict().items()})
 
         self.distribution = training_data.dataset.distribution
         xlsx_path = './datasets/excel/' + name.split('_')[0] + '_distribution.xlsx'
@@ -284,17 +279,10 @@ class GLASS(torch.nn.Module):
             try:
                 self.forward_modules.eval()
                 pbar_str, pt, pf = self._train_discriminator_amp(training_data, i_epoch, pbar, pbar_str1)
-    
-                update_state_dict()
+
+                self.ema.update(self)
     
                 ckpt_path_cur = os.path.join(self.ckpt_dir, "cur_ckpt.pth".format(i_epoch))
-                try:
-                    if i_epoch%2 == 0:
-                        if osp.exists(ckpt_path_cur):
-                            os.remove(ckpt_path_cur)
-                        torch.save(state_dict, ckpt_path_cur)
-                except Exception as e:
-                    print(f"ERROR: {e}")
     
                 if (i_epoch + self.eval_offset) % self.eval_epochs == self.eval_epochs-1:
                     print(f"\nBegin eval...")
@@ -302,10 +290,27 @@ class GLASS(torch.nn.Module):
                     t0 = time.time()
                     with torch.cuda.amp.autocast():
                         images, scores, segmentations, labels_gt, masks_gt, img_paths = self.predict(val_data)
-                    image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(images, scores, segmentations,
-                                                                                             labels_gt, masks_gt, name,img_paths=img_paths)
-    
+                    model_er = self._evaluate(images, scores, segmentations,
+                                              labels_gt, masks_gt, name,img_paths=img_paths)
+                    image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_er
                     best_threshold, best_precision, best_recall, best_f1 = self.prf
+                    cur_score = self.get_score(pauroc=pixel_auroc,f1=best_f1)
+                    print(f"Model cur score {cur_score}")
+                    model_ema_er =  self.ema.model._evaluate(images, scores, segmentations,
+                                                             labels_gt, masks_gt, name,img_paths=img_paths)
+                    image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_ema_er
+                    best_threshold, best_precision, best_recall, best_f1 = self.ema.model.prf
+                    cur_ema_score = self.get_score(pauroc=pixel_auroc,f1=best_f1)
+                    print(f"Model cur ema score {cur_ema_score}")
+                    if cur_ema_score>cur_score:
+                        print(f"use ema ckpt")
+                        image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_ema_er
+                        best_threshold, best_precision, best_recall, best_f1 = self.ema.model.prf
+                    else:
+                        print(f"Use model ckpt")
+                        image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_er
+                        best_threshold, best_precision, best_recall, best_f1 = self.prf
+
                     self.logger.logger.add_scalar("i-auroc", image_auroc, i_epoch)
                     self.logger.logger.add_scalar("Recall", best_recall, i_epoch)
                     self.logger.logger.add_scalar("p-auroc", pixel_auroc, i_epoch)
@@ -327,7 +332,7 @@ class GLASS(torch.nn.Module):
                     if best_record is None:
                         best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
                         ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
-                        torch.save(state_dict, ckpt_path_best)
+                        torch.save(self.get_state_dict(), ckpt_path_best)
                         shutil.rmtree(eval_path, ignore_errors=True)
                         if osp.exists(train_path):
                             shutil.copytree(train_path, eval_path)
@@ -336,6 +341,10 @@ class GLASS(torch.nn.Module):
                         best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
                         os.remove(ckpt_path_best)
                         ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
+                        if cur_ema_score>cur_score:
+                            state_dict = self.ema.model.get_state_dict()
+                        else:
+                            state_dict = self.get_state_dict()
                         torch.save(state_dict, ckpt_path_best)
                         shutil.rmtree(eval_path, ignore_errors=True)
                         if osp.exists(train_path):
@@ -373,7 +382,7 @@ class GLASS(torch.nn.Module):
                     print(f"Eval finish, time cost {time.time()-t0:.3f}s\n")
                     sys.stdout.flush()
     
-                torch.save(state_dict, ckpt_path_save)
+                torch.save(self.get_state_dict(), ckpt_path_save)
                 min_error_nr = 0
 
             except Exception as e:
@@ -515,17 +524,20 @@ class GLASS(torch.nn.Module):
                     self.scaler.unscale_(self.proj_opt) #将梯度都除以self.scaler._scale
                     self.total_norm_proj = torch.nn.utils.clip_grad_norm_(self.pre_projection.parameters(), max_norm=self.max_norm, norm_type=2)
                 self.scaler.step(self.proj_opt)
+                self.proj_ls.step()
             if self.train_backbone:
                 if self.max_norm is not None:
                     self.scaler.unscale_(self.backbone_opt) #将梯度都除以self.scaler._scale
                     self.total_norm_backbone= torch.nn.utils.clip_grad_norm_(self.forward_modules.train_parameters(), max_norm=self.max_norm, norm_type=2)
                 self.scaler.step(self.backbone_opt)
+                self.backbone_ls.step()
 
             if self.max_norm is not None:
                 self.scaler.unscale_(self.dsc_opt) #将梯度都除以self.scaler._scale
                 self.total_norm_dsc = torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=self.max_norm, norm_type=2)
             self.scaler.step(self.dsc_opt)
             self.scaler.update()
+            self.dsc_ls.step()
 
             pix_true = torch.concat([fake_scores.detach() * (1 - mask_s_gt), true_scores.detach()])
             pix_fake = torch.concat([fake_scores.detach() * mask_s_gt, gaus_scores.detach()])
@@ -547,6 +559,7 @@ class GLASS(torch.nn.Module):
                 self.logger.logger.add_images("aug",log_img.to(torch.uint8),self.logger.g_iter)
                 log_img = torch.unsqueeze(data_item["mask_s"][:3],1)*200
                 self.logger.logger.add_images("mask_s",log_img.to(torch.uint8),self.logger.g_iter)
+                self.logger.logger.add_scalar("ema_old_persent", self.ema.ema_persent, self.logger.g_iter)
                 wsummary.log_all_variable(self.logger.logger,self,global_step=self.logger.g_iter)
             self.logger.step()
 
@@ -888,3 +901,18 @@ class GLASS(torch.nn.Module):
         image_auroc, best_precision, p_auroc, best_recall, best_f1, epoch = record
         score = self.get_score(pauroc=record[2],f1=record[4])
         print(f"{get_class_name()}: {info}: M:{score:.3f}, pixel_auroc: {p_auroc:.3f}, Precision: {best_precision:.3f}, Recall: {best_recall:.3f}, F1: {best_f1:.3f}, best_epoch: {epoch}\n" )
+
+
+    def get_state_dict(self):
+        state_dict = {}
+        state_dict["discriminator"] = OrderedDict({
+            k: v.detach().cpu()
+            for k, v in self.discriminator.state_dict().items()})
+        state_dict["forward_modules"] = OrderedDict({
+            k: v.detach().cpu()
+            for k, v in self.forward_modules.state_dict().items()})
+        state_dict["pre_projection"] = OrderedDict({
+            k: v.detach().cpu()
+            for k, v in self.pre_projection.state_dict().items()})
+        
+        return state_dict
