@@ -14,6 +14,12 @@ def get_class_name():
     global _CLASS_NAME
     return _CLASS_NAME
 
+def auto_align(classname):
+    if classname in ["vial"]:
+        return 32
+    else:
+        return 56
+
 def auto_set_img_cut_nr(name):
     assert name in ALL_CLASS_NAMES, f"ERROR class name {name}"
     if name in ["walnuts","fabric","sheet_metal"  , "vial"  , "wallplugs"  , "walnuts"]:

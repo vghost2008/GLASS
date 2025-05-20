@@ -114,6 +114,9 @@ class MVTecDataset2(torch.utils.data.Dataset):
         "rice":[2440,2040], "sheet_metal":[4220,1050],"vial":[1400,1900], "wallplugs":[2440,2040], "walnuts":[2440,2040]}  #W,H
 
         super().__init__()
+        if align_v <= 0:
+            align_v = auto_align(classname)
+            print(f"Auto align value {align_v}")
         self.source = source
         self.split = split
         self.batch_size = batch_size

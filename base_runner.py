@@ -162,7 +162,7 @@ def net(
 @click.option("--rand_aug", default=1, type=int)
 @click.option("--downsampling", default=4, type=int)
 @click.option("--augment", is_flag=True)
-@click.option("--align", default=32, type=int)
+@click.option("--align", default=-1, type=int)
 def dataset(
         name,
         data_path,

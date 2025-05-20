@@ -30,6 +30,7 @@ import time
 from wml.semantic.mask_utils import npresize_mask,resize_mask,npresize_mask_mt
 from datadef import get_class_name, get_img_cut_nr
 import torchvision
+import traceback
 from utils import *
 
 def trace_grad_fn(grad_fn, depth=0):
@@ -387,6 +388,7 @@ class GLASS(torch.nn.Module):
                         min_error_nr = 0
                     except Exception as e:
                         pass
+                traceback.print_exc()
                 print(colorama.Fore.RED+f"ERROR:{e}"+colorama.Style.RESET_ALL)
         return best_record
 
