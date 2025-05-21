@@ -176,7 +176,7 @@ class GLASS(torch.nn.Module):
         self.dataset_name = ""
         self.logger = None
         print(f"Dataloader len {dataloader_len}")
-        self.ema = ModelEMA(self,beta=2,base_updates=dataloader_len*4,decay=1-1.0/(2*dataloader_len))
+        self.ema = ModelEMA(self,base_updates=dataloader_len*4,decay=1-1.0/(2*dataloader_len))
         print(f"EMA: {self.ema}")
 
     def get_embed_optim(self):
