@@ -346,6 +346,12 @@ class GLASS(torch.nn.Module):
                             print(f"Get model state dict")
                             state_dict = self.get_state_dict()
                         torch.save(state_dict, ckpt_path_best)
+                        try:
+                            ckpt_path_best = osp.abspath(ckpt_path_best)
+                            sym_path = wmlu.change_name(ckpt_path_best,basename="ckpt_best")
+                            wmlu.symlink(ckpt_path_best,sym_path)
+                        except:
+                            pass
                         shutil.rmtree(eval_path, ignore_errors=True)
                         if osp.exists(train_path):
                             shutil.copytree(train_path, eval_path)
