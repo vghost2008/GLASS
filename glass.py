@@ -298,7 +298,7 @@ class GLASS(torch.nn.Module):
                     image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_er
                     best_threshold, best_precision, best_recall, best_f1 = self.prf
                     cur_score = self.get_score(pauroc=pixel_auroc,f1=best_f1)
-                    print(f"Model cur score {cur_score}")
+                    self.show_record([image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch],"model record")
                     with torch.cuda.amp.autocast():
                         images, scores, segmentations, labels_gt, masks_gt, img_paths = self.ema.ema.predict(val_data)
                     model_ema_er =  self.ema.ema._evaluate(images, scores, segmentations,
@@ -306,13 +306,15 @@ class GLASS(torch.nn.Module):
                     image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_ema_er
                     best_threshold, best_precision, best_recall, best_f1 = self.ema.ema.prf
                     cur_ema_score = self.get_score(pauroc=pixel_auroc,f1=best_f1)
-                    print(f"Model cur ema score {cur_ema_score}")
+                    self.show_record([image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch],"model ema record")
                     if cur_ema_score>cur_score:
                         print(f"use ema ckpt")
+                        use_ema_ckpt = True
                         image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_ema_er
                         best_threshold, best_precision, best_recall, best_f1 = self.ema.ema.prf
                     else:
                         print(f"Use model ckpt")
+                        use_ema_ckpt = False 
                         image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_er
                         best_threshold, best_precision, best_recall, best_f1 = self.prf
 
@@ -346,9 +348,11 @@ class GLASS(torch.nn.Module):
                         best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
                         os.remove(ckpt_path_best)
                         ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
-                        if cur_ema_score>cur_score:
+                        if use_ema_ckpt:
+                            print(f"Get EMA state dict")
                             state_dict = self.ema.ema.get_state_dict()
                         else:
+                            print(f"Get model state dict")
                             state_dict = self.get_state_dict()
                         torch.save(state_dict, ckpt_path_best)
                         shutil.rmtree(eval_path, ignore_errors=True)
