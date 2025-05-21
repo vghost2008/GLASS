@@ -339,7 +339,13 @@ class GLASS(torch.nn.Module):
                     if best_record is None:
                         best_record = [image_auroc, best_precision, pixel_auroc, best_recall, best_f1, i_epoch]
                         ckpt_path_best = os.path.join(self.ckpt_dir, "ckpt_best_{}.pth".format(i_epoch))
-                        torch.save(self.get_state_dict(), ckpt_path_best)
+                        if use_ema_ckpt:
+                            print(f"Get EMA state dict")
+                            state_dict = self.ema.ema.get_state_dict()
+                        else:
+                            print(f"Get model state dict")
+                            state_dict = self.get_state_dict()
+                        torch.save(state_dict, ckpt_path_best)
                         shutil.rmtree(eval_path, ignore_errors=True)
                         if osp.exists(train_path):
                             shutil.copytree(train_path, eval_path)
