@@ -299,6 +299,8 @@ class GLASS(torch.nn.Module):
                     best_threshold, best_precision, best_recall, best_f1 = self.prf
                     cur_score = self.get_score(pauroc=pixel_auroc,f1=best_f1)
                     print(f"Model cur score {cur_score}")
+                    with torch.cuda.amp.autocast():
+                        images, scores, segmentations, labels_gt, masks_gt, img_paths = self.ema.ema.predict(val_data)
                     model_ema_er =  self.ema.ema._evaluate(images, scores, segmentations,
                                                              labels_gt, masks_gt, name,img_paths=img_paths)
                     image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = model_ema_er
