@@ -58,7 +58,7 @@ def run(
             utils.fix_seeds(seed, device)
             dataset_name = dataloaders["training"].name
             imagesize = dataloaders["training"].dataset.imagesize
-            glass_list = methods["get_glass"](imagesize, device)
+            glass_list = methods["get_glass"](imagesize, device,dataloader_len=len(dataloaders["training"]))
     
     
             LOGGER.info(
