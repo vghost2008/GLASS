@@ -134,18 +134,11 @@ class GLASS(torch.nn.Module):
         self.lr = lr
         self.train_backbone = train_backbone
         warmup_steps = 100*10
-        if self.train_backbone:
-            #self.backbone_opt = torch.optim.AdamW(self.forward_modules["feature_aggregator"].backbone.parameters(), lr)
-            self.backbone_opt = self.get_embed_optim()
-            self.backbone_ls = WarmupCosLR(self.backbone_opt,warmup_steps,640*dataloader_len)
 
         self.pre_proj = pre_proj
         if self.pre_proj > 0:
             self.pre_projection = Projection(self.target_embed_dimension, self.target_embed_dimension, pre_proj)
             self.pre_projection.to(self.device)
-            #self.proj_opt = torch.optim.Adam(self.pre_projection.parameters(), lr, weight_decay=1e-5)
-            self.proj_opt = self.get_proj_optim()
-            self.proj_ls = WarmupCosLR(self.proj_opt,warmup_steps,640*dataloader_len)
 
         self.eval_epochs = eval_epochs
         self.eval_offset = 0
@@ -158,9 +151,9 @@ class GLASS(torch.nn.Module):
         self.dsc_hidden = dsc_hidden
         self.discriminator = Discriminator(self.target_embed_dimension, n_layers=dsc_layers, hidden=dsc_hidden)
         self.discriminator.to(self.device)
-        #self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2, weight_decay=1e-4)
-        self.dsc_opt = self.get_dsc_optim()
-        self.dsc_ls = WarmupCosLR(self.dsc_opt,warmup_steps,640*dataloader_len)
+        #self.model_optim = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2, weight_decay=1e-4)
+        self.model_optim = self.get_optim()
+        self.model_lrs = WarmupCosLR(self.model_optim,warmup_steps,640*dataloader_len)
         self.dsc_margin = dsc_margin
 
         self.p = p
@@ -182,41 +175,10 @@ class GLASS(torch.nn.Module):
         self.ema = ModelEMA(self,base_updates=dataloader_len*4,decay=1-1.0/(2*dataloader_len))
         print(f"EMA: {self.ema}")
 
-    def get_embed_optim(self):
-        print(f"Get embed optimizer")
-        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.forward_modules,return_unused=True)
-        optimizer = torch.optim.AdamW(
-                weights,
-                lr=self.lr,
-                weight_decay=1e-5,
-            )
-        if len(bn_weights)>0:
-            optimizer.add_param_group({"params": bn_weights,"weight_decay":0.0})
-        if len(biases)>0:
-            optimizer.add_param_group({"params": biases,"weight_decay":0.0})
-        #optimizer,unbn_weights,unweights,unbiases
-        return optimizer
 
-    def get_proj_optim(self):
-        #self.proj_opt = torch.optim.Adam(self.pre_projection.parameters(), lr, weight_decay=1e-5)
-        print(f"Get proj optimizer")
-        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.pre_projection,return_unused=True)
-        optimizer = torch.optim.AdamW(
-                weights,
-                lr=self.lr,
-                weight_decay=1e-5,
-            )
-        if len(bn_weights)>0:
-            optimizer.add_param_group({"params": bn_weights,"weight_decay":0.0})
-        if len(biases)>0:
-            optimizer.add_param_group({"params": biases,"weight_decay":0.0})
-        #optimizer,unbn_weights,unweights,unbiases
-        return optimizer
-
-    def get_dsc_optim(self):
-        #self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2, weight_decay=1e-4)
+    def get_optim(self):
         print(f"Get dsc optimizer")
-        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.discriminator,return_unused=True)
+        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self,return_unused=True)
         optimizer = torch.optim.AdamW(
                 weights,
                 lr=self.lr,
@@ -226,7 +188,10 @@ class GLASS(torch.nn.Module):
             optimizer.add_param_group({"params": bn_weights,"weight_decay":0.0})
         if len(biases)>0:
             optimizer.add_param_group({"params": biases,"weight_decay":0.0})
-        #optimizer,unbn_weights,unweights,unbiases
+        print(f"Parameters not to train")
+        wmlu.show_list(unweights)
+        wmlu.show_list(unbn_weights)
+        wmlu.show_list(unbiases)
         return optimizer
 
     def set_model_dir(self, model_dir, dataset_name,run_save_path="./results",tb_dir="tb"):
@@ -468,11 +433,7 @@ class GLASS(torch.nn.Module):
         sample_num = 0
         tda_error_nr = 0
         for i_iter, data_item in enumerate(input_data):
-            self.dsc_opt.zero_grad()
-            if self.pre_proj > 0:
-                self.proj_opt.zero_grad()
-            if self.train_backbone:
-                self.backbone_opt.zero_grad()
+            self.model_optim.zero_grad()
 
             aug = data_item["aug"]
             aug = aug.to(torch.float).to(self.device)
@@ -494,8 +455,6 @@ class GLASS(torch.nn.Module):
                 mask_s_gt = data_item["mask_s"].reshape(-1, 1).to(self.device)
                 noise = torch.normal(0, self.noise, true_feats.shape).to(self.device)
                 gaus_feats = true_feats + noise.to(true_feats.dtype)
-    
-                true_points = torch.concat([fake_feats[mask_s_gt[:, 0] == 0], true_feats], dim=0)
     
                 for step in range(self.step + 1):
                     gaus_feats = torch.tensor(gaus_feats.detach(),requires_grad=True)
@@ -576,25 +535,13 @@ class GLASS(torch.nn.Module):
                 loss = sum(model_loss)
 
             self.scaler.scale(loss).backward()
-            if self.pre_proj > 0:
-                if self.max_norm is not None:
-                    self.scaler.unscale_(self.proj_opt) #将梯度都除以self.scaler._scale
-                    self.total_norm_proj = torch.nn.utils.clip_grad_norm_(self.pre_projection.parameters(), max_norm=self.max_norm, norm_type=2)
-                self.scaler.step(self.proj_opt)
-                self.proj_ls.step()
-            if self.train_backbone:
-                if self.max_norm is not None:
-                    self.scaler.unscale_(self.backbone_opt) #将梯度都除以self.scaler._scale
-                    self.total_norm_backbone= torch.nn.utils.clip_grad_norm_(self.forward_modules.train_parameters(), max_norm=self.max_norm, norm_type=2)
-                self.scaler.step(self.backbone_opt)
-                self.backbone_ls.step()
 
             if self.max_norm is not None:
-                self.scaler.unscale_(self.dsc_opt) #将梯度都除以self.scaler._scale
+                self.scaler.unscale_(self.model_optim) #将梯度都除以self.scaler._scale
                 self.total_norm_dsc = torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=self.max_norm, norm_type=2)
-            self.scaler.step(self.dsc_opt)
+            self.scaler.step(self.model_optim)
             self.scaler.update()
-            self.dsc_ls.step()
+            self.model_lrs.step()
             self.ema.update(self)
 
             pix_true = torch.concat([fake_scores.detach() * (1 - mask_s_gt), true_scores.detach()])
@@ -618,9 +565,7 @@ class GLASS(torch.nn.Module):
                 log_img = torch.unsqueeze(data_item["mask_s"][:3],1)*200
                 self.logger.logger.add_images("mask_s",log_img.to(torch.uint8),self.logger.g_iter)
                 self.logger.logger.add_scalar("ema_old_persent", self.ema.ema_persent, self.logger.g_iter)
-                wsummary.log_optimizer(self.logger.logger,self.backbone_opt,self.logger.g_iter,name="backbone_opt")
-                wsummary.log_optimizer(self.logger.logger,self.dsc_opt,self.logger.g_iter,name="dsc_opt")
-                wsummary.log_optimizer(self.logger.logger,self.proj_opt,self.logger.g_iter,name="proj_opt")
+                wsummary.log_optimizer(self.logger.logger,self.model_optim,self.logger.g_iter,name="model_optim")
                 wsummary.log_all_variable(self.logger.logger,self,global_step=self.logger.g_iter)
             self.logger.step()
 

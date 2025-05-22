@@ -14,6 +14,7 @@ from torchvision.transforms.functional import to_pil_image
 from models.vit_encoder import load as dino_load
 from models.image_encoder import ImageEncoderViT
 import wml.wtorch.utils as wtu
+import wml.wtorch.train_toolkit as wtu
 from datadef import get_class_name
 
 _BACKBONES = {
@@ -183,4 +184,5 @@ def load(name):
         backbone.out_info = [['0'],[256]]
         backbone.out_dict = backbone.out_info[0]
     
+    wtu.freeze_model(backbone)
     return backbone
