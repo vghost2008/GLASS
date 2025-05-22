@@ -112,6 +112,7 @@ class MVTecDataset2(torch.utils.data.Dataset):
         """
         size_dict = {"can":[2230,1020],  "fabric":[2440,2040], "fruit_jelly":[2100,1520], 
         "rice":[2440,2040], "sheet_metal":[4220,1050],"vial":[1400,1900], "wallplugs":[2440,2040], "walnuts":[2440,2040]}  #W,H
+        #fix_size_dict = {"walnuts";[840,700]}
 
         super().__init__()
         if align_v <= 0:
