@@ -133,17 +133,19 @@ class GLASS(torch.nn.Module):
         self.meta_epochs = meta_epochs
         self.lr = lr
         self.train_backbone = train_backbone
+        warmup_steps = 100*10
         if self.train_backbone:
             #self.backbone_opt = torch.optim.AdamW(self.forward_modules["feature_aggregator"].backbone.parameters(), lr)
             self.backbone_opt = self.get_embed_optim()
-            self.backbone_ls = WarmupCosLR(self.backbone_opt,400,640*dataloader_len)
+            self.backbone_ls = WarmupCosLR(self.backbone_opt,warmup_steps,640*dataloader_len)
 
         self.pre_proj = pre_proj
         if self.pre_proj > 0:
             self.pre_projection = Projection(self.target_embed_dimension, self.target_embed_dimension, pre_proj)
             self.pre_projection.to(self.device)
-            self.proj_opt = torch.optim.Adam(self.pre_projection.parameters(), lr, weight_decay=1e-5)
-            self.proj_ls = WarmupCosLR(self.proj_opt,400,640*dataloader_len)
+            #self.proj_opt = torch.optim.Adam(self.pre_projection.parameters(), lr, weight_decay=1e-5)
+            self.proj_opt = self.get_proj_optim()
+            self.proj_ls = WarmupCosLR(self.proj_opt,warmup_steps,640*dataloader_len)
 
         self.eval_epochs = eval_epochs
         self.eval_offset = 0
@@ -156,8 +158,9 @@ class GLASS(torch.nn.Module):
         self.dsc_hidden = dsc_hidden
         self.discriminator = Discriminator(self.target_embed_dimension, n_layers=dsc_layers, hidden=dsc_hidden)
         self.discriminator.to(self.device)
-        self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2, weight_decay=1e-4)
-        self.dsc_ls = WarmupCosLR(self.dsc_opt,400,640*dataloader_len)
+        #self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2, weight_decay=1e-4)
+        self.dsc_opt = self.get_dsc_optim()
+        self.dsc_ls = WarmupCosLR(self.dsc_opt,warmup_steps,640*dataloader_len)
         self.dsc_margin = dsc_margin
 
         self.p = p
@@ -175,16 +178,49 @@ class GLASS(torch.nn.Module):
         self.model_dir = ""
         self.dataset_name = ""
         self.logger = None
-        print(f"Dataloader len {dataloader_len}")
+        print(f"Dataloader len {dataloader_len}, lr={lr:.6f}")
         self.ema = ModelEMA(self,base_updates=dataloader_len*4,decay=1-1.0/(2*dataloader_len))
         print(f"EMA: {self.ema}")
 
     def get_embed_optim(self):
+        print(f"Get embed optimizer")
         bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.forward_modules,return_unused=True)
         optimizer = torch.optim.AdamW(
                 weights,
                 lr=self.lr,
                 weight_decay=1e-5,
+            )
+        if len(bn_weights)>0:
+            optimizer.add_param_group({"params": bn_weights,"weight_decay":0.0})
+        if len(biases)>0:
+            optimizer.add_param_group({"params": biases,"weight_decay":0.0})
+        #optimizer,unbn_weights,unweights,unbiases
+        return optimizer
+
+    def get_proj_optim(self):
+        #self.proj_opt = torch.optim.Adam(self.pre_projection.parameters(), lr, weight_decay=1e-5)
+        print(f"Get proj optimizer")
+        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.pre_projection,return_unused=True)
+        optimizer = torch.optim.AdamW(
+                weights,
+                lr=self.lr,
+                weight_decay=1e-5,
+            )
+        if len(bn_weights)>0:
+            optimizer.add_param_group({"params": bn_weights,"weight_decay":0.0})
+        if len(biases)>0:
+            optimizer.add_param_group({"params": biases,"weight_decay":0.0})
+        #optimizer,unbn_weights,unweights,unbiases
+        return optimizer
+
+    def get_dsc_optim(self):
+        #self.dsc_opt = torch.optim.AdamW(self.discriminator.parameters(), lr=lr * 2, weight_decay=1e-4)
+        print(f"Get dsc optimizer")
+        bn_weights,weights,biases,unbn_weights,unweights,unbiases = wtt.simple_split_parameters(self.discriminator,return_unused=True)
+        optimizer = torch.optim.AdamW(
+                weights,
+                lr=self.lr,
+                weight_decay=1e-4,
             )
         if len(bn_weights)>0:
             optimizer.add_param_group({"params": bn_weights,"weight_decay":0.0})

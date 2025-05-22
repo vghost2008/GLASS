@@ -59,7 +59,7 @@ def main(**kwargs):
 @click.option("--noise", type=float, default=0.015)
 @click.option("--radius", type=float, default=0.75)
 @click.option("--p", type=float, default=0.5)
-@click.option("--lr", type=float, default=0.0001)
+@click.option("--lr", type=float, default=0.001)
 @click.option("--svd", type=int, default=0)
 @click.option("--step", type=int, default=20)
 @click.option("--limit", type=int, default=392)
